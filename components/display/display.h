@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-esp_err_t display_brightness_set(int brightness_percent);
+esp_err_t display_brightness_set(uint8_t brightness_percent);
 esp_err_t display_init(void);
 
 #ifdef __cplusplus

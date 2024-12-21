@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
-#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -97,18 +96,31 @@ static void main_task(void *arg)
         }
 #endif
 
+#if 1
+        /* For debug only, to be commented out later */
         if ((loop_cnt % (30 * MAIN_TASK_LOOP_PER_SEC)) == 0) {
             char time_buf[10];
             struct tm timeinfo;
+            char *stats_buf;
             time_t now;
     
-            /* Print heap size ant time every 30 seconds */
+            /* Print some stats every 30 seconds */
             time(&now);
             localtime_r(&now, &timeinfo);
 
             strftime(time_buf, sizeof(time_buf), "%H:%M:%S", &timeinfo);
-            ESP_LOGI(TAG, "Free heap %"PRIu32", time %s", esp_get_free_heap_size(), time_buf);
+            printf("Time: %s\n", time_buf);
+
+            printf("Free heap %"PRIu32"B (%"PRIu32"B internal memory)\n",
+                esp_get_free_heap_size(), esp_get_free_internal_heap_size());
+
+            printf( "Task Name\tStatus\tPrio\tHWM\tTask\tAffinity\n");
+            stats_buf = malloc(1024);
+            vTaskList(stats_buf);
+            printf("%s\n", stats_buf);
+            free(stats_buf);
         }
+#endif
 
         loop_cnt++;
     }
@@ -190,6 +202,6 @@ void app_main(void)
 
 reboot:
     ESP_LOGI(TAG, "Failed to start. Rebooting...");
-    sleep(1);
+    sleep(2);
     esp_restart();
 }

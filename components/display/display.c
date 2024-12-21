@@ -41,7 +41,7 @@
 
 #define DISPLAY_QSPI_HOST               (SPI2_HOST)
 
-/* DMA memory needs to be in the internal RAM */
+/* Limit the SPI transfer size as DMA memory needs to be in the internal RAM */
 #define DISPLAY_QSPI_NAX_TRANSFER_SZ    4096
 
 
@@ -175,19 +175,10 @@ static esp_err_t display_new_panel(display_dev_t *dev)
                                         DISPLAY_PIN_NUM_DATA2,
                                         DISPLAY_PIN_NUM_DATA3,
                                         DISPLAY_QSPI_NAX_TRANSFER_SZ);
-
-    ESP_LOGI(TAG, "Initialize SPI bus");
-
-    ESP_ERROR_CHECK(spi_bus_initialize(DISPLAY_QSPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
-
-    ESP_LOGI(TAG, "Install panel IO");
-    const esp_lcd_panel_io_spi_config_t io_config = AXS15231B_PANEL_IO_QSPI_CONFIG(DISPLAY_PIN_NUM_CS, NULL, NULL);
-    // Attach the LCD to the SPI bus
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)DISPLAY_QSPI_HOST, &io_config, &dev->io_handle));
-
-    ESP_LOGI(TAG, "Install LCD driver of axs15231b");
+    const esp_lcd_panel_io_spi_config_t io_config =
+        AXS15231B_PANEL_IO_QSPI_CONFIG(DISPLAY_PIN_NUM_CS, NULL, NULL);
     const axs15231b_vendor_config_t vendor_config = {
-        .init_cmds = lcd_init_cmds,         // Uncomment these line if use custom initialization commands
+        .init_cmds = lcd_init_cmds,
         .init_cmds_size = sizeof(lcd_init_cmds) / sizeof(lcd_init_cmds[0]),
         .flags = {
             .use_qspi_interface = 1,
@@ -199,6 +190,15 @@ static esp_err_t display_new_panel(display_dev_t *dev)
         .bits_per_pixel = DISPLAY_BITS_PER_PIXEL,
         .vendor_config = (void *) &vendor_config,
     };
+
+    ESP_LOGI(TAG, "Initialize SPI bus");
+    ESP_ERROR_CHECK(spi_bus_initialize(DISPLAY_QSPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
+
+    ESP_LOGI(TAG, "Install panel IO");
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)DISPLAY_QSPI_HOST,
+        &io_config, &dev->io_handle));
+
+    ESP_LOGI(TAG, "Install axs15231b LCD driver");
     ESP_ERROR_CHECK(esp_lcd_new_panel_axs15231b(dev->io_handle, &panel_config, &dev->panel_handle));
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(dev->panel_handle));
@@ -294,18 +294,21 @@ static esp_err_t display_touch_new(display_dev_t *dev)
     /* Initialize I2C */
     BSP_ERROR_CHECK_RETURN_ERR(display_i2c_init(dev));
 
-    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)DISPLAY_I2C_NUM, &tp_io_config, &dev->tp_io_handle), TAG, "");
-    ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_axs15231b(dev->tp_io_handle, &tp_cfg, &dev->tp_handle), TAG, "New axs15231b failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)DISPLAY_I2C_NUM,
+            &tp_io_config, &dev->tp_io_handle), TAG, "");
+    ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_axs15231b(dev->tp_io_handle,
+            &tp_cfg, &dev->tp_handle), TAG, "New axs15231b failed");
 
     if (tp_cfg.int_gpio_num > 0) {
 
         tp_intr_event = xSemaphoreCreateBinary();
-        ESP_RETURN_ON_FALSE(tp_intr_event, ESP_ERR_NO_MEM, TAG, "Not enough memory for tp_intr_event allocation!");
+        ESP_RETURN_ON_FALSE(tp_intr_event, ESP_ERR_NO_MEM, TAG,
+            "Not enough memory for tp_intr_event allocation!");
         dev->tp_intr_event = tp_intr_event;
-        esp_lcd_touch_register_interrupt_callback_with_data(dev->tp_handle, display_touch_interrupt_cb, (void *)dev);
-    } else {
-        dev->tp_intr_event = NULL;
+        esp_lcd_touch_register_interrupt_callback_with_data(dev->tp_handle,
+            display_touch_interrupt_cb, (void *)dev);
     }
+
     dev->tp_handle->config.user_data = dev;
 
     return ESP_OK;
@@ -326,17 +329,17 @@ static esp_err_t display_indev_init(display_dev_t *dev)
     return dev->disp_indev != NULL ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t display_brightness_set(int brightness_percent)
+esp_err_t display_brightness_set(uint8_t brightness_percent)
 {
     if (brightness_percent > 100) {
         brightness_percent = 100;
     }
-    if (brightness_percent < 0) {
-        brightness_percent = 0;
-    }
 
     ESP_LOGI(TAG, "Setting display brightness: %d%%", brightness_percent);
-    uint32_t duty_cycle = (1023 * brightness_percent) / 100; // LEDC resolution set to 10bits, thus: 100% = 1023
+
+    // LEDC resolution set to 10bits, thus: 100% = 1023
+    uint32_t duty_cycle = (1023 * (uint32_t)brightness_percent) / 100;
+
     BSP_ERROR_CHECK_RETURN_ERR(ledc_set_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL, duty_cycle));
     BSP_ERROR_CHECK_RETURN_ERR(ledc_update_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL));
 
@@ -362,7 +365,7 @@ esp_err_t display_init(void)
 
     ret = lvgl_port_init(&lvgl_cfg);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize lgvl, ret %d", ret);
+        ESP_LOGE(TAG, "Failed to initialize lvgl, ret %d", ret);
         goto err;
     }
 
