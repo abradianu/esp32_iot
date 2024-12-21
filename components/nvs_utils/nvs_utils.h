@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef __FLASH_UTILS_H__
-#define __FLASH_UTILS_H__
+#ifndef __NVS_UTILS_H__
+#define __NVS_UTILS_H__
 
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -33,4 +33,4 @@ esp_err_t  nvs_init(void);
 }
 #endif
 
-#endif /* __OTA_H__ */
+#endif /* __NVS_UTILS_H__ */

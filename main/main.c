@@ -17,6 +17,7 @@
 #include "nvs_utils.h"
 #include "http_server.h"
 #include "wifi.h"
+#include "display.h"
 
 /* Main task settings */
 #define MAIN_TASK_LOOP_DELAY_MS        100
@@ -171,6 +172,13 @@ void app_main(void)
         goto reboot;
     }
     ESP_LOGI(TAG, "NTP initialization done");
+
+    display_init();
+    if (ret != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to init display, ret %d", ret);
+        goto reboot;
+    }
+    ESP_LOGI(TAG, "Display initialization done");
 
     if (xTaskCreate(main_task, "main_task", MAIN_TASK_STACK_SIZE, NULL,
         MAIN_TASK_PRIORITY, NULL) != pdPASS) {
