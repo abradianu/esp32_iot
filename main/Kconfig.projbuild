@@ -1,0 +1,21 @@
+menu "ESP32 IoT Configuration"
+
+    choice ESP32_IOT_BOARD
+        prompt "ESP32 IoT board"
+        default ESP32_IOT_JC3248W535
+        help
+            ESP32 IoT Board
+
+        config ESP32_IOT_JC3248W535
+            bool "JC3248W535"
+        config ESP32_IOT_TEST
+            bool "TEST"
+    endchoice
+
+    config SNTP_TIME_SERVER
+        string "SNTP server name"
+        default "pool.ntp.org"
+        help
+            Hostname of the main SNTP server.
+
+endmenu
