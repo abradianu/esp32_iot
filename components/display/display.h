@@ -1,6 +1,5 @@
-
 /*
- * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2024 Adrian Bradianu (github.com/abradianu)
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,6 +10,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define DISPLAY_H_RES                   (320)
+#define DISPLAY_V_RES                   (480)
 
 esp_err_t display_brightness_set(uint8_t brightness_percent);
 esp_err_t display_init(void);

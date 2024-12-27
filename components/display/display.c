@@ -25,7 +25,6 @@
 #include "bsp_err_check.h"
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
-#include "lv_demos.h"
 
 #include "sdkconfig.h"
 #include "display.h"
@@ -33,8 +32,6 @@
 #ifdef CONFIG_ESP32_IOT_JC3248W535
 /* LCD display configuration */
 #define DISPLAY_BITS_PER_PIXEL          (16)
-#define DISPLAY_H_RES                   (320)
-#define DISPLAY_V_RES                   (480)
 
 #define DISPLAY_I2C_NUM                 (I2C_NUM_0)
 #define DISPLAY_I2C_CLK_SPEED_HZ        400000
@@ -387,14 +384,7 @@ esp_err_t display_init(void)
         goto err;
     }
 
-    display_brightness_set(50);
-
-    /* Lock the mutex due to the LVGL APIs are not thread-safe */
-    lvgl_port_lock(0);
-
-    lv_demo_widgets();
-
-    lvgl_port_unlock();
+    display_brightness_set(30);
 
     return ESP_OK;
 

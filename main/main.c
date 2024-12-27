@@ -17,12 +17,13 @@
 #include "http_server.h"
 #include "wifi.h"
 #include "display.h"
+#include "gui.h"
+#include "cpu_temp_sensor.h"
 
 /* Main task settings */
-#define MAIN_TASK_LOOP_DELAY_MS        100
+#define MAIN_TASK_LOOP_DELAY_MS        5000
 #define MAIN_TASK_PRIORITY             10
 #define MAIN_TASK_STACK_SIZE           4096
-#define MAIN_TASK_LOOP_PER_SEC         (1000 / MAIN_TASK_LOOP_DELAY_MS)
 
 /*
  * std offset dst [offset],start[/time],end[/time]
@@ -39,6 +40,8 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
+#define FW_VERSION              "1.01"
+
 static const char *TAG = "esp32_iot";
 
 static esp_err_t ntp_init(void)
@@ -53,6 +56,8 @@ static void main_task(void *arg)
     bool init_done = false;
     uint32_t loop_cnt = 0;
 
+    gui_init();
+
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(MAIN_TASK_LOOP_DELAY_MS));
 
@@ -65,9 +70,10 @@ static void main_task(void *arg)
 #endif       
             init_done = true;
         }
-#if 0
+
         /* Actions done each MAIN_TASK_LOOP_DELAY interval */
 
+#if 0
         sensors_run();
         
         /* Check if should send sensors info */
@@ -96,19 +102,20 @@ static void main_task(void *arg)
         }
 #endif
 
+        gui_update_sensors(12.3, 5.7, -23.1);
+
 #if 1
         /* For debug only, to be commented out later */
-        if ((loop_cnt % (30 * MAIN_TASK_LOOP_PER_SEC)) == 0) {
+        if ((loop_cnt % 6) == 0) {
+            char *stats_buf;
             char time_buf[10];
             struct tm timeinfo;
-            char *stats_buf;
             time_t now;
     
             /* Print some stats every 30 seconds */
+
             time(&now);
             localtime_r(&now, &timeinfo);
-
-            strftime(time_buf, sizeof(time_buf), "%H:%M:%S", &timeinfo);
             printf("Time: %s\n", time_buf);
 
             printf("Free heap %"PRIu32"B (%"PRIu32"B internal memory)\n",
@@ -126,6 +133,11 @@ static void main_task(void *arg)
     }
 }
 
+char *fw_version_get(void)
+{
+    return FW_VERSION;
+}
+
 void app_main(void)
 {
     esp_err_t ret;
@@ -139,7 +151,7 @@ void app_main(void)
     //Initialize NVS
     ret = nvs_init();
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to init NVS, ret %d", ret);
+        ESP_LOGE(TAG, "Failed to init NVS, ret %d", ret);
         goto reboot;
     }
     ESP_LOGI(TAG, "NVS initialization done");
@@ -180,14 +192,20 @@ void app_main(void)
 
     ret = ntp_init();
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to init NTP, ret %d", ret);
+        ESP_LOGE(TAG, "Failed to init NTP, ret %d", ret);
         goto reboot;
     }
     ESP_LOGI(TAG, "NTP initialization done");
 
-    display_init();
+    ret = cpu_temp_sensor_init();
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to init display, ret %d", ret);
+        ESP_LOGE(TAG, "Failed to init internal temperature sensor, ret %d", ret);
+        goto reboot;
+    }
+
+    ret = display_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init display, ret %d", ret);
         goto reboot;
     }
     ESP_LOGI(TAG, "Display initialization done");
