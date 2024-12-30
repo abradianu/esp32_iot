@@ -19,12 +19,19 @@
 #include "display.h"
 #include "gui.h"
 #include "cpu_temp_sensor.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "hdc1080.h"
 
 /* Main task settings */
 #define MAIN_TASK_LOOP_DELAY_MS        5000
 #define MAIN_TASK_PRIORITY             10
 #define MAIN_TASK_STACK_SIZE           4096
 
+#define SENSOR_I2C_BUS_NUM             I2C_NUM_1
+#define SENSOR_I2C_BUS_CLK_SPEED       100000
+#define SENSOR_I2C_SDA_PIN_NUM         GPIO_NUM_17
+#define SENSOR_I2C_SCL_PIN_NUM         GPIO_NUM_18
 /*
  * std offset dst [offset],start[/time],end[/time]
  * There are no spaces in the specification. The initial std and offset specify
@@ -44,6 +51,8 @@
 
 static const char *TAG = "esp32_iot";
 
+static hdc1080_sensor_t* hdc1080_sensor;
+
 static esp_err_t ntp_init(void)
 {
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_SNTP_TIME_SERVER);
@@ -51,10 +60,37 @@ static esp_err_t ntp_init(void)
     return esp_netif_sntp_init(&config);
 }
 
+static esp_err_t i2c_sensors_bus_init(i2c_port_t bus)
+{
+    esp_err_t ret;
+
+    const i2c_config_t i2c_conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = SENSOR_I2C_SDA_PIN_NUM,
+        .sda_pullup_en = GPIO_PULLUP_DISABLE,
+        .scl_io_num = SENSOR_I2C_SCL_PIN_NUM,
+        .scl_pullup_en = GPIO_PULLUP_DISABLE,
+        .master.clk_speed = SENSOR_I2C_BUS_CLK_SPEED
+    };
+    ret = i2c_param_config(bus, &i2c_conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to config sensors I2C!");
+        return ret;
+    }
+    ret = i2c_driver_install(bus, i2c_conf.mode, 0, 0, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to install sensors I2C driver!");
+    }
+
+    return ret;
+}
+
 static void main_task(void *arg)
 {
+    esp_err_t ret;
     bool init_done = false;
     uint32_t loop_cnt = 0;
+    float temp, humidity;
 
     gui_init();
 
@@ -73,9 +109,13 @@ static void main_task(void *arg)
 
         /* Actions done each MAIN_TASK_LOOP_DELAY interval */
 
-#if 0
-        sensors_run();
-        
+        ret = hdc1080_read(hdc1080_sensor, &temp, &humidity);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to read HDC1080 sensor, ret %d", ret);
+        } else {
+            ESP_LOGI(TAG, "Temp %f, Humidity %f", temp, humidity);
+        }
+#if 0       
         /* Check if should send sensors info */
         sensors_send_info_time += MAIN_TASK_LOOP_DELAY;
         if (sensors_send_info_time >= SENSORS_READ_TIME) {
@@ -102,7 +142,7 @@ static void main_task(void *arg)
         }
 #endif
 
-        gui_update_sensors(12.3, 5.7, -23.1);
+        gui_update_sensors(temp, humidity, -23.1);
 
 #if 1
         /* For debug only, to be commented out later */
@@ -209,6 +249,20 @@ void app_main(void)
         goto reboot;
     }
     ESP_LOGI(TAG, "Display initialization done");
+
+    ret = i2c_sensors_bus_init(SENSOR_I2C_BUS_NUM);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init sensors i2c bus, ret %d", ret);
+        goto reboot;
+    }
+    ESP_LOGI(TAG, "Sensors I2C bus initialization done");
+    
+    hdc1080_sensor = hdc1080_init(SENSOR_I2C_BUS_NUM);
+    if (hdc1080_sensor == NULL) {
+        ESP_LOGE(TAG, "Failed to init HDC1080 sensor");
+        goto reboot;
+    }
+    ESP_LOGI(TAG, "Sensors I2C bus initialization done");
 
     if (xTaskCreate(main_task, "main_task", MAIN_TASK_STACK_SIZE, NULL,
         MAIN_TASK_PRIORITY, NULL) != pdPASS) {
