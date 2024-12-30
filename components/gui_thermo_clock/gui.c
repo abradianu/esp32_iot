@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include "esp_err.h"
 #include "esp_check.h"
@@ -53,7 +54,7 @@ static lv_obj_t *ssid_ta;
 static lv_obj_t *ssid_label;
 static lv_obj_t *pwd_ta;
 static lv_obj_t *pwd_label;
-static lv_obj_t *mqtt_ta;
+static lv_obj_t *mqtt_broker_ta;
 static lv_obj_t *mqtt_label;
 static lv_obj_t *kb;
 static lv_color_t text_color;
@@ -234,6 +235,56 @@ static void gui_update_stats(void)
     free(wifi_cfg);
 }
 
+static void gui_dialog_apply_event_cb(lv_event_t * e)
+{
+    const char *wifi_ssid = lv_textarea_get_text(ssid_ta);
+    const char *wifi_pass = lv_textarea_get_text(pwd_ta);
+    const char *mqtt_broker = lv_textarea_get_text(mqtt_broker_ta);
+
+    if (nvs_set_str(nvs_get_handle(), NVS_WIFI_SSID, wifi_ssid) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to save the WiFi SSID!");
+        return;
+    }
+
+    if (nvs_set_str(nvs_get_handle(), NVS_WIFI_PASS, wifi_pass) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to save the WiFI password!");
+        return;
+    }
+
+    if (nvs_set_str(nvs_get_handle(), NVS_MQTT_BROKER_IP, mqtt_broker) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to save the MQTT broker name!");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Settings applied. Rebooting...");
+
+    esp_restart();
+}
+
+static void gui_dialog_apply(void)
+{
+    lv_obj_t * mbox1 = lv_msgbox_create(NULL);
+
+    lv_msgbox_add_title(mbox1, "Apply settings");
+    lv_msgbox_add_text(mbox1, "Are you sure? The device will be rebooted!!!");
+    lv_msgbox_add_close_button(mbox1);
+    lv_obj_set_style_text_font(mbox1, &GUI_SETTINGS_FONT, 0);
+
+    lv_obj_t * btn;
+    btn = lv_msgbox_add_footer_button(mbox1, "Apply");
+    lv_obj_add_event_cb(btn, gui_dialog_apply_event_cb, LV_EVENT_CLICKED, NULL);
+}
+
+static void gui_dialog_error(const char *name, const char *text)
+{
+    lv_obj_t * mbox1 = lv_msgbox_create(NULL);
+
+    lv_msgbox_add_title(mbox1, name);
+    lv_msgbox_add_text(mbox1, text);
+    lv_msgbox_add_close_button(mbox1);
+    lv_obj_set_style_text_font(mbox1, &GUI_SETTINGS_FONT, 0);
+}
+
 static void gui_ta_event_cb(lv_event_t * e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -242,7 +293,31 @@ static void gui_ta_event_cb(lv_event_t * e)
         /*Focus on the clicked text area*/
         if(kb != NULL) lv_keyboard_set_textarea(kb, ta);
     } else if(code == LV_EVENT_READY) {
-        ESP_LOGI(TAG, "Ready, current text: %s", lv_textarea_get_text(ta));
+        const char *wifi_ssid = lv_textarea_get_text(ssid_ta);
+        const char *wifi_pass = lv_textarea_get_text(pwd_ta);
+        const char *mqtt_broker= lv_textarea_get_text(mqtt_broker_ta);
+        size_t ssid_len = strlen(wifi_ssid);
+        size_t pass_len = strlen(wifi_pass);
+        size_t mqtt_broker_len = strlen(mqtt_broker);
+
+        if (!ssid_len || ssid_len > WIFI_SSID_LEN_MAX - 1) {
+            gui_dialog_error("Error", "Wrong WiFI SSID string!");
+            return;
+        }
+
+        if (!pass_len || pass_len > WIFI_SSID_LEN_MAX - 1) {
+            gui_dialog_error("Error", "Wrong WiFi password string!");
+            return;
+        }
+
+        if (!mqtt_broker_len) {
+            gui_dialog_error("Error", "Empty MQTT broker string!");
+            return;
+        }
+
+        gui_dialog_apply();
+
+        ESP_LOGI(TAG, "Ready, %s, %s, %s", wifi_ssid, wifi_pass, mqtt_broker);
     }
 }
 
@@ -251,11 +326,14 @@ static void gui_tab_settings(lv_obj_t *parent)
     int32_t y_pos = GUI_SETTINGS_Y_START_OFFSET;
     char wifi_ssid[WIFI_SSID_LEN_MAX] = {0};
     char wifi_pass[WIFI_PASS_LEN_MAX] = {0};
+    char mqtt_broker[24] = {0};
     size_t ssid_len = sizeof(wifi_ssid);
     size_t pass_len = sizeof(wifi_pass);
+    size_t mqtt_broker_len = sizeof(mqtt_broker);
 
     nvs_get_str(nvs_get_handle(), NVS_WIFI_SSID, wifi_ssid, &ssid_len);
     nvs_get_str(nvs_get_handle(), NVS_WIFI_PASS, wifi_pass, &pass_len);
+    nvs_get_str(nvs_get_handle(), NVS_MQTT_BROKER_IP, mqtt_broker, &mqtt_broker_len);
 
     /* First row, create the SSID text area and the SSID label  */
     ssid_ta = lv_textarea_create(parent);
@@ -300,22 +378,22 @@ static void gui_tab_settings(lv_obj_t *parent)
     y_pos += GUI_SETTINGS_RAW_HEIGHT;
 
     /* Third row, create the MQTT broker IP text area and label */
-    mqtt_ta = lv_textarea_create(parent);
-    lv_textarea_set_text(mqtt_ta, "192.168.1.111");
-    lv_textarea_set_one_line(mqtt_ta, true);
-    lv_textarea_set_password_mode(mqtt_ta, false);
-    lv_obj_add_event_cb(mqtt_ta, gui_ta_event_cb, LV_EVENT_ALL, NULL);
-    lv_obj_set_style_text_font(mqtt_ta, &GUI_SETTINGS_FONT, LV_PART_MAIN);
-    lv_obj_set_style_text_color(mqtt_ta, lv_color_black(), LV_PART_MAIN);
-    lv_obj_align(mqtt_ta, LV_ALIGN_TOP_LEFT, GUI_SETTINGS_TEXT_AREA_X_OFFSET, y_pos);
-    lv_obj_set_width(mqtt_ta, GUI_SETTINGS_TEXT_AREA_X_WIDTH);
+    mqtt_broker_ta = lv_textarea_create(parent);
+    lv_textarea_set_text(mqtt_broker_ta, mqtt_broker);
+    lv_textarea_set_one_line(mqtt_broker_ta, true);
+    lv_textarea_set_password_mode(mqtt_broker_ta, false);
+    lv_obj_add_event_cb(mqtt_broker_ta, gui_ta_event_cb, LV_EVENT_ALL, NULL);
+    lv_obj_set_style_text_font(mqtt_broker_ta, &GUI_SETTINGS_FONT, LV_PART_MAIN);
+    lv_obj_set_style_text_color(mqtt_broker_ta, lv_color_black(), LV_PART_MAIN);
+    lv_obj_align(mqtt_broker_ta, LV_ALIGN_TOP_LEFT, GUI_SETTINGS_TEXT_AREA_X_OFFSET, y_pos);
+    lv_obj_set_width(mqtt_broker_ta, GUI_SETTINGS_TEXT_AREA_X_WIDTH);
 
     mqtt_label = lv_label_create(parent);
     lv_obj_set_style_text_color(mqtt_label, text_color, LV_PART_MAIN);
-    lv_label_set_text(mqtt_label, "Server");
+    lv_label_set_text(mqtt_label, "Broker");
     lv_obj_set_style_text_font(mqtt_label, &GUI_SETTINGS_FONT, LV_PART_MAIN);
     lv_obj_set_style_text_color(mqtt_label, text_color, LV_PART_MAIN);
-    lv_obj_align_to(mqtt_label, mqtt_ta, LV_ALIGN_OUT_LEFT_MID,
+    lv_obj_align_to(mqtt_label, mqtt_broker_ta, LV_ALIGN_OUT_LEFT_MID,
         GUI_SETTINGS_LABEL_TA_ALIGN_X, 0);
 
     /*Create keyboard*/
