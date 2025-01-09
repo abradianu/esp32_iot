@@ -67,6 +67,16 @@ LV_IMAGE_DECLARE(icon_temperature_in);
 LV_IMAGE_DECLARE(icon_temperature_out);
 LV_IMAGE_DECLARE(icon_humidity_in);
 
+static void gui_dialog_error(const char *name, const char *text)
+{
+    lv_obj_t * mbox1 = lv_msgbox_create(NULL);
+
+    lv_msgbox_add_title(mbox1, name);
+    lv_msgbox_add_text(mbox1, text);
+    lv_msgbox_add_close_button(mbox1);
+    lv_obj_set_style_text_font(mbox1, &GUI_SETTINGS_FONT, 0);
+}
+
 static void gui_update_sensors_labels(float temp_in, float humidity_in, float temp_out)
 {
     char buf[10];
@@ -90,7 +100,6 @@ static void gui_tab_sensors(lv_obj_t *parent)
     time_label = lv_label_create(parent);
     lv_obj_set_style_text_font(time_label, &GUI_CLOCK_FONT, 0);
     lv_obj_set_style_text_color(time_label, text_color, LV_PART_MAIN);
-    lv_label_set_text(time_label, "21:24");
     lv_obj_align(time_label, LV_ALIGN_TOP_MID, 0, y_pos);
 
     y_pos += GUI_CLOCK_ROW_HEIGHT;
@@ -243,16 +252,25 @@ static void gui_dialog_apply_event_cb(lv_event_t * e)
 
     if (nvs_set_str(nvs_get_handle(), NVS_WIFI_SSID, wifi_ssid) != ESP_OK) {
         ESP_LOGI(TAG, "Failed to save the WiFi SSID!");
+        gui_dialog_error("Error", "Failed to save the WiFi SSID!");
         return;
     }
 
     if (nvs_set_str(nvs_get_handle(), NVS_WIFI_PASS, wifi_pass) != ESP_OK) {
         ESP_LOGI(TAG, "Failed to save the WiFI password!");
+        gui_dialog_error("Error", "Failed to save the WiFi password!");
         return;
     }
 
     if (nvs_set_str(nvs_get_handle(), NVS_MQTT_BROKER_IP, mqtt_broker) != ESP_OK) {
         ESP_LOGI(TAG, "Failed to save the MQTT broker name!");
+        gui_dialog_error("Error", "Failed to save the MQTT broker name!");
+        return;
+    }
+
+    if (nvs_set_u8(nvs_get_handle(), NVS_WIFI_AP_MODE, 0) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to set the WiFi station mode!");
+        gui_dialog_error("Error", "Failed to set the WiFi station mode!");
         return;
     }
 
@@ -273,16 +291,6 @@ static void gui_dialog_apply(void)
     lv_obj_t * btn;
     btn = lv_msgbox_add_footer_button(mbox1, "Apply");
     lv_obj_add_event_cb(btn, gui_dialog_apply_event_cb, LV_EVENT_CLICKED, NULL);
-}
-
-static void gui_dialog_error(const char *name, const char *text)
-{
-    lv_obj_t * mbox1 = lv_msgbox_create(NULL);
-
-    lv_msgbox_add_title(mbox1, name);
-    lv_msgbox_add_text(mbox1, text);
-    lv_msgbox_add_close_button(mbox1);
-    lv_obj_set_style_text_font(mbox1, &GUI_SETTINGS_FONT, 0);
 }
 
 static void gui_ta_event_cb(lv_event_t * e)

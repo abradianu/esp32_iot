@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef __NVS_CPU_TEMP_SENSOR_H__
-#define __NVS_CPU_TEMP_SENSOR_H__
+#ifndef __CPU_TEMP_SENSOR_H__
+#define __CPU_TEMP_SENSOR_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,4 +18,4 @@ esp_err_t  cpu_temp_sensor_init(void);
 }
 #endif
 
-#endif /* __NVS_CPU_TEMP_SENSOR_H__ */
+#endif /* __CPU_TEMP_SENSOR_H__ */

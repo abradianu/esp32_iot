@@ -72,11 +72,13 @@ static esp_err_t i2c_sensors_bus_init(i2c_port_t bus)
         .scl_pullup_en = GPIO_PULLUP_DISABLE,
         .master.clk_speed = SENSOR_I2C_BUS_CLK_SPEED
     };
+
     ret = i2c_param_config(bus, &i2c_conf);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to config sensors I2C!");
         return ret;
     }
+
     ret = i2c_driver_install(bus, i2c_conf.mode, 0, 0, 0);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to install sensors I2C driver!");
@@ -95,8 +97,6 @@ static void main_task(void *arg)
     gui_init();
 
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(MAIN_TASK_LOOP_DELAY_MS));
-
         if (!init_done && wifi_is_connected()) {
 #if 0
             /* Init the MQTT command receiving logic */
@@ -168,6 +168,8 @@ static void main_task(void *arg)
             free(stats_buf);
         }
 #endif
+
+        vTaskDelay(pdMS_TO_TICKS(MAIN_TASK_LOOP_DELAY_MS));
 
         loop_cnt++;
     }

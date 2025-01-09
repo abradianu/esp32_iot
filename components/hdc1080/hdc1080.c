@@ -59,7 +59,7 @@ hdc1080_sensor_t* hdc1080_init(i2c_port_t bus)
     }
 
     data[0] = HDC1080_REG_DEVICE_ID;
-     ret = i2c_master_write_read_device(bus, HDC1080_I2C_ADDRESS, data, 1,
+    ret = i2c_master_write_read_device(bus, HDC1080_I2C_ADDRESS, data, 1,
         &data[1], 2, HDC1080_I2C_TICKS_TO_WAIT);
     if (ret != ESP_OK ||
         ((data[1] << 8) | data[2]) != HDC1080_DEVICE_ID) {

@@ -2543,7 +2543,5 @@ lv_font_t dseg7_classic_bold_82 = {
     .user_data = NULL,
 };
 
-
-
 #endif /*#if DSEG7_CLASSIC_BOLD_82*/
 

@@ -4,9 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -36,8 +33,12 @@ esp_err_t cpu_temp_sensor_init()
     esp_err_t ret;
     temperature_sensor_config_t cpu_temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
 
-    cpu_temp_sensor_mutex = xSemaphoreCreateMutex();
+    if (cpu_temp_sensor != NULL) {
+        ESP_LOGW(TAG, "Internal temperature sensor already initialized");
+        return ESP_OK;
+    }
 
+    cpu_temp_sensor_mutex = xSemaphoreCreateMutex();
     if (cpu_temp_sensor_mutex == NULL) {
        return ESP_ERR_NO_MEM;
     }
