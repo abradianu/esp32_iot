@@ -11,9 +11,6 @@
 extern "C" {
 #endif
 
-#define DISPLAY_H_RES                   (320)
-#define DISPLAY_V_RES                   (480)
-
 esp_err_t display_brightness_set(uint8_t brightness_percent);
 esp_err_t display_init(void);
 

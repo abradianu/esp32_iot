@@ -22,7 +22,6 @@
 #include "esp_lcd_panel_interface.h"
 #include "esp_lcd_types.h"
 #include "esp_lcd_axs15231b.h"
-#include "bsp_err_check.h"
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
 
@@ -31,6 +30,8 @@
 
 #ifdef CONFIG_ESP32_IOT_JC3248W535
 /* LCD display configuration */
+#define DISPLAY_H_RES                   (320)
+#define DISPLAY_V_RES                   (480)
 #define DISPLAY_BITS_PER_PIXEL          (16)
 
 #define DISPLAY_I2C_NUM                 (I2C_NUM_0)
@@ -40,7 +41,6 @@
 
 /* Limit the SPI transfer size as DMA memory needs to be in the internal RAM */
 #define DISPLAY_QSPI_NAX_TRANSFER_SZ    4096
-
 
 /* Pinout */
 #define DISPLAY_PIN_NUM_CS              (GPIO_NUM_45)
@@ -58,6 +58,8 @@
 #define DISPLAY_PIN_NUM_TOUCH_SDA       (GPIO_NUM_4)
 #define DISPLAY_PIN_NUM_TOUCH_RST       (-1)
 #define DISPLAY_PIN_NUM_TOUCH_INT       (-1)
+
+#define DISPLAY_BRIGHTNESS_DEFAULT      30
 
 static const axs15231b_lcd_init_cmd_t lcd_init_cmds[] = {
     {0xBB, (uint8_t []){0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x5A, 0xA5}, 8, 0},
@@ -115,6 +117,8 @@ static const char *TAG = "display";
 
 static esp_err_t display_i2c_init(display_dev_t *dev)
 {
+    esp_err_t ret;
+
     /* I2C was initialized before */
     if (dev->i2c_initialized) {
         return ESP_OK;
@@ -128,8 +132,17 @@ static esp_err_t display_i2c_init(display_dev_t *dev)
         .scl_pullup_en = GPIO_PULLUP_DISABLE,
         .master.clk_speed = DISPLAY_I2C_CLK_SPEED_HZ
     };
-    BSP_ERROR_CHECK_RETURN_ERR(i2c_param_config(DISPLAY_I2C_NUM, &i2c_conf));
-    BSP_ERROR_CHECK_RETURN_ERR(i2c_driver_install(DISPLAY_I2C_NUM, i2c_conf.mode, 0, 0, 0));
+    ret = i2c_param_config(DISPLAY_I2C_NUM, &i2c_conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to config I2C params, ret %d", ret);
+        return ret;
+    }
+
+    ret = i2c_driver_install(DISPLAY_I2C_NUM, i2c_conf.mode, 0, 0, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to install I2C driver, ret %d", ret);
+        return ret;
+    }
 
     dev->i2c_initialized = true;
 
@@ -138,6 +151,8 @@ static esp_err_t display_i2c_init(display_dev_t *dev)
 
 static esp_err_t display_brightness_init(display_dev_t *dev)
 {
+    esp_err_t ret;
+
     // Setup LEDC peripheral for PWM backlight control
     const ledc_channel_config_t LCD_backlight_channel = {
         .gpio_num = DISPLAY_PIN_NUM_BL,
@@ -156,15 +171,24 @@ static esp_err_t display_brightness_init(display_dev_t *dev)
         .clk_cfg = LEDC_AUTO_CLK
     };
 
-    BSP_ERROR_CHECK_RETURN_ERR(ledc_timer_config(&LCD_backlight_timer));
-    BSP_ERROR_CHECK_RETURN_ERR(ledc_channel_config(&LCD_backlight_channel));
+    ret = ledc_timer_config(&LCD_backlight_timer);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to config ledc timer, ret %d", ret);
+        return ret;
+    }
+
+    ret = ledc_channel_config(&LCD_backlight_channel);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to config ledc channel, ret %d", ret);
+        return ret;
+    }
 
     return ESP_OK;
 }
 
 static esp_err_t display_new_panel(display_dev_t *dev)
 {
-    esp_err_t ret = ESP_OK;
+    esp_err_t ret;
     const spi_bus_config_t buscfg = AXS15231B_PANEL_BUS_QSPI_CONFIG(
                                         DISPLAY_PIN_NUM_PCLK,
                                         DISPLAY_PIN_NUM_DATA0,
@@ -189,25 +213,57 @@ static esp_err_t display_new_panel(display_dev_t *dev)
     };
 
     ESP_LOGI(TAG, "Initialize SPI bus");
-    ESP_ERROR_CHECK(spi_bus_initialize(DISPLAY_QSPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
+    ret = spi_bus_initialize(DISPLAY_QSPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize SPI bus, ret %d", ret);
+        return ret;
+    }
 
     ESP_LOGI(TAG, "Install panel IO");
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)DISPLAY_QSPI_HOST,
-        &io_config, &dev->io_handle));
+    ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)DISPLAY_QSPI_HOST,
+        &io_config, &dev->io_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create lcd panel, ret %d", ret);
+        return ret;
+    }
 
     ESP_LOGI(TAG, "Install axs15231b LCD driver");
-    ESP_ERROR_CHECK(esp_lcd_new_panel_axs15231b(dev->io_handle, &panel_config, &dev->panel_handle));
+    ret = esp_lcd_new_panel_axs15231b(dev->io_handle, &panel_config, &dev->panel_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to install lcd panel, ret %d", ret);
+        return ret;
+    }
 
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(dev->panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(dev->panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(dev->panel_handle, false));
+    ret = esp_lcd_panel_reset(dev->panel_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to reset lcd panel, ret %d", ret);
+        return ret;
+    }
 
-    return ret;
+    ret = esp_lcd_panel_init(dev->panel_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init lcd panel, ret %d", ret);
+        return ret;
+    }
+
+    ret = esp_lcd_panel_disp_on_off(dev->panel_handle, false);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to turn off lcd panel, ret %d", ret);
+        return ret;
+    }
+
+    return ESP_OK;
 }
 
 static esp_err_t display_lcd_init(display_dev_t *dev)
 {
-    ESP_ERROR_CHECK(display_new_panel(dev));
+    esp_err_t ret;
+
+    ret = display_new_panel(dev);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create new display panel, ret %d", ret);
+        return ret;
+    }
 
     lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = dev->io_handle,
@@ -269,6 +325,7 @@ static void display_touch_process_points_cb(esp_lcd_touch_handle_t tp, uint16_t 
 
 static esp_err_t display_touch_new(display_dev_t *dev)
 {
+    esp_err_t ret;
     SemaphoreHandle_t tp_intr_event = NULL;
     esp_lcd_touch_config_t tp_cfg = {
         .x_max = DISPLAY_H_RES,
@@ -289,18 +346,33 @@ static esp_err_t display_touch_new(display_dev_t *dev)
     const esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_AXS15231B_CONFIG();
 
     /* Initialize I2C */
-    BSP_ERROR_CHECK_RETURN_ERR(display_i2c_init(dev));
+    ret = display_i2c_init(dev);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init I2C, ret %d", ret);
+        return ret;
+    }
 
-    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)DISPLAY_I2C_NUM,
-            &tp_io_config, &dev->tp_io_handle), TAG, "");
-    ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_axs15231b(dev->tp_io_handle,
-            &tp_cfg, &dev->tp_handle), TAG, "New axs15231b failed");
+    ret = esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)DISPLAY_I2C_NUM,
+            &tp_io_config, &dev->tp_io_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create new lcd panel, ret %d", ret);
+        return ret;
+    }
+
+    ret = esp_lcd_touch_new_i2c_axs15231b(dev->tp_io_handle,
+            &tp_cfg, &dev->tp_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create axs15231 touch, ret %d", ret);
+        return ret;
+    }
 
     if (tp_cfg.int_gpio_num > 0) {
-
         tp_intr_event = xSemaphoreCreateBinary();
-        ESP_RETURN_ON_FALSE(tp_intr_event, ESP_ERR_NO_MEM, TAG,
-            "Not enough memory for tp_intr_event allocation!");
+        if (tp_intr_event == NULL) {
+            ESP_LOGE(TAG, "Failed to create semaphore");
+            return ESP_ERR_NO_MEM;
+        }
+
         dev->tp_intr_event = tp_intr_event;
         esp_lcd_touch_register_interrupt_callback_with_data(dev->tp_handle,
             display_touch_interrupt_cb, (void *)dev);
@@ -313,7 +385,13 @@ static esp_err_t display_touch_new(display_dev_t *dev)
 
 static esp_err_t display_indev_init(display_dev_t *dev)
 {
-    BSP_ERROR_CHECK_RETURN_ERR(display_touch_new(dev));
+    esp_err_t ret;
+
+    ret = display_touch_new(dev);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create new touch, ret %d", ret);
+        return ret;
+    }
 
     /* Add touch input (for selected screen) */
     const lvgl_port_touch_cfg_t touch_cfg = {
@@ -328,6 +406,8 @@ static esp_err_t display_indev_init(display_dev_t *dev)
 
 esp_err_t display_brightness_set(uint8_t brightness_percent)
 {
+    esp_err_t ret;
+
     if (brightness_percent > 100) {
         brightness_percent = 100;
     }
@@ -337,8 +417,17 @@ esp_err_t display_brightness_set(uint8_t brightness_percent)
     // LEDC resolution set to 10bits, thus: 100% = 1023
     uint32_t duty_cycle = (1023 * (uint32_t)brightness_percent) / 100;
 
-    BSP_ERROR_CHECK_RETURN_ERR(ledc_set_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL, duty_cycle));
-    BSP_ERROR_CHECK_RETURN_ERR(ledc_update_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL));
+    ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL, duty_cycle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set ledc duty, ret %d", ret);
+        return ret;
+    }
+
+    ret = ledc_update_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to updatye ledc duty, ret %d", ret);
+        return ret;
+    }
 
     return ESP_OK;
 }
@@ -384,7 +473,11 @@ esp_err_t display_init(void)
         goto err;
     }
 
-    display_brightness_set(30);
+    ret = display_brightness_set(DISPLAY_BRIGHTNESS_DEFAULT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set display brightness, ret %d", ret);
+        goto err;
+    }
 
     return ESP_OK;
 
