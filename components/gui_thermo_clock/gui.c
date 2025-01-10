@@ -181,7 +181,7 @@ static void gui_update_stats(void)
 
     p = buf;
 
-    len = snprintf(p, buf_len, "FW version: %s\n", fw_version_get());
+    len = snprintf(p, buf_len, "FW version: %s\n", esp32_iot_fw_version_get());
     p += len;
     buf_len -= len;
 

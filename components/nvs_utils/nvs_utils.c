@@ -20,10 +20,10 @@ static const char *TAG = "NVSU";
 
 static nvs_handle nvs_flash_handle;
 
-const char * nvs_get_base_mac()
+const char *nvs_get_base_mac(void)
 {
     uint8_t base_mac[6];
-    static char * mac_str;
+    static char *mac_str;
 
     if (mac_str == NULL) {
         mac_str = malloc(2 * sizeof(base_mac) + 1);
@@ -38,12 +38,12 @@ const char * nvs_get_base_mac()
     return mac_str;
 }
 
-nvs_handle nvs_get_handle()
+nvs_handle nvs_get_handle(void)
 {
     return nvs_flash_handle;
 }
 
-esp_err_t nvs_init()
+esp_err_t nvs_init(void)
 {
     esp_err_t ret;
 

@@ -43,7 +43,7 @@
 
 static const char *TAG = "hdc1080";
 
-hdc1080_sensor_t* hdc1080_init(i2c_port_t bus)
+hdc1080_sensor_t *hdc1080_init(i2c_port_t bus)
 {
     esp_err_t ret;
     uint8_t data[3];

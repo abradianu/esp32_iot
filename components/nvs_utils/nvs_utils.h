@@ -27,7 +27,7 @@ extern "C" {
 
 nvs_handle nvs_get_handle(void);
 const char *nvs_get_base_mac(void);
-esp_err_t  nvs_init(void);
+esp_err_t nvs_init(void);
 
 #ifdef __cplusplus
 }
