@@ -13,16 +13,17 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "esp_system.h"
-//#include "ota.h"
+#include "ota.h"
 #include "mqtt_client.h"
 #include "cJSON.h"
 #include "nvs_utils.h"
 #include "display.h"
 #include "main.h"
 #include "mqtt_cmd.h"
+#include "gui.h"
 
 #define CMD_RECV_TASK_NAME         "cmd_rcv"
-#define CMD_RECV_TASK_STACK        3072
+#define CMD_RECV_TASK_STACK        4096
 #define CMD_RECV_TASK_PRIO         10
 
 #define MQTT_CMD_SUB_TOPIC_PREFIX  "sensors/cmd/"
@@ -349,8 +350,14 @@ static esp_err_t mqtt_cmd_do_reboot(const cJSON *root)
     return ESP_FAIL;
 }
 
+static void mqtt_cmd_ota_progress(uint32_t progress)
+{
+    gui_ota_progress(progress);
+}
+
 static esp_err_t mqtt_cmd_do_ota(const cJSON *root)
 {
+    esp_err_t ret;
     cJSON *server = NULL;
     cJSON *port = NULL;
     cJSON *file = NULL;
@@ -375,10 +382,18 @@ static esp_err_t mqtt_cmd_do_ota(const cJSON *root)
 
     ESP_LOGI(TAG, "CMD OTA  server %s, port %d, file %s",
              server->valuestring, port->valueint, file->valuestring);
-#if 0
-    return ota_start(server->valuestring, port->valueint, file->valuestring, NULL) == ESP_OK) {
-#endif
-    return ESP_FAIL;
+
+    gui_ota_start();
+
+    ret = ota_start(server->valuestring, port->valueint, file->valuestring,
+        &mqtt_cmd_ota_progress);
+
+    if (ret == ESP_OK)
+        do_reboot();
+
+    gui_ota_stop();
+
+    return ret;
 }
 
 static esp_err_t mqtt_cmd_set_client_name(const cJSON *root)

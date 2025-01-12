@@ -7,4 +7,4 @@ list(APPEND srcs "icon_humidity_in.c")
 
 idf_component_register(SRCS ${srcs}
                     INCLUDE_DIRS "."
-                    REQUIRES esp_lvgl_port cpu_temp_sensor nvs_utils wifi main)
+                    REQUIRES esp_lvgl_port cpu_temp_sensor nvs_utils wifi main app_update)

@@ -279,7 +279,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Sensors I2C bus initialization done");
 
-    ret = gui_init();
+    ret = gui_start();
     if (ret != ESP_OK) {
         FATAL_ERROR("Failed to start gui, ret %d!", ret);
     }
