@@ -199,6 +199,7 @@ void app_main(void)
     char wifi_pass[WIFI_PASS_LEN_MAX];
     const char *base_mac;
     nvs_handle nvs;
+    size_t len;
 
     ESP_LOGI(TAG, "Starting...");
 
@@ -284,9 +285,14 @@ void app_main(void)
         FATAL_ERROR("Failed to start gui, ret %d!", ret);
     }
 
-    ret = mqtt_cmd_init();
-    if (ret != ESP_OK)
-        FATAL_ERROR("Failed to start MQTT, ret %d!", ret);
+    /* No MQTT in AP mode or when broker IP is not configured */
+    if (ap_mode || nvs_get_str(nvs, NVS_MQTT_BROKER_IP, NULL, &len) != ESP_OK) {
+        ESP_LOGI(TAG, "MQTT not started!");
+    } else {
+        ret = mqtt_cmd_init();
+        if (ret != ESP_OK)
+            FATAL_ERROR("Failed to start MQTT, ret %d!", ret);
+    }
 
     if (xTaskCreate(main_task, "main_task", MAIN_TASK_STACK_SIZE, NULL,
         MAIN_TASK_PRIORITY, NULL) != pdPASS)

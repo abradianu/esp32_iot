@@ -65,6 +65,7 @@ typedef struct {
     char *mqtt_cmd_topic;
     esp_mqtt_client_handle_t mqtt_client;
     QueueHandle_t cmd_recv_queue;
+    bool initialized;
 } mqtt_cmd_t;
 
 static const char *TAG = "mqtt_cmd";
@@ -570,6 +571,11 @@ static void mqtt_cmd_recv_task(void *arg)
     }
 }
 
+const char *mqtt_cmd_get_client_id(void)
+{
+    return  mqtt_cmd.mqtt_client_id;
+}
+
 /*
  * Sys info JSON format:
  * {
@@ -588,6 +594,11 @@ esp_err_t mqtt_cmd_send_sys_info(void)
     cJSON *root = NULL;
     char *string;
     uint32_t uptime;
+
+    if (!mqtt_cmd.initialized) {
+        ESP_LOGE(TAG, "Not initialized!");
+        return ESP_FAIL;
+    }
 
     /* uptime in seconds */
     uptime = esp_timer_get_time() / 1000000;
@@ -643,6 +654,11 @@ esp_err_t mqtt_cmd_send_sensors_info(const mqtt_cmd_sensors_data_t *sensors_data
     esp_err_t ret = ESP_OK;
     cJSON *root = NULL;
     char *string;
+
+    if (!mqtt_cmd.initialized) {
+        ESP_LOGE(TAG, "Not initialized!");
+        return ESP_FAIL;
+    }
 
     root = cJSON_CreateObject();
     if (root == NULL) {
@@ -703,6 +719,8 @@ esp_err_t mqtt_cmd_init(void)
         ESP_LOGE(TAG, "Failed to start MQTT client!");
         return ESP_FAIL;
     }
+
+    mqtt_cmd.initialized = true;
 
     return ESP_OK;
 }

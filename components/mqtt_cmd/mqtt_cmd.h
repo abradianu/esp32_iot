@@ -107,6 +107,7 @@ typedef struct {
     float humidity;
 }mqtt_cmd_sensors_data_t;
 
+const char *mqtt_cmd_get_client_id(void);
 esp_err_t mqtt_cmd_send_sensors_info(const mqtt_cmd_sensors_data_t *sensors_data);
 esp_err_t mqtt_cmd_send_sys_info(void);
 esp_err_t mqtt_cmd_init(void);

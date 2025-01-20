@@ -166,7 +166,7 @@ static void gui_tab_stats(lv_obj_t *parent)
 
 static void gui_update_stats(void)
 {
-    size_t buf_len = 256;
+    size_t buf_len = 512;
     int len = 0;
     char *buf, *p;
     uint32_t uptime, days, days_rest, hours, minutes, seconds;
@@ -190,6 +190,10 @@ static void gui_update_stats(void)
     }
 
     p = buf;
+
+    len = snprintf(p, buf_len, "Sensor id: %s\n", mqtt_cmd_get_client_id());
+    p += len;
+    buf_len -= len;
 
     len = snprintf(p, buf_len, "FW version: %s\n", esp32_iot_fw_version_get());
     p += len;
