@@ -52,24 +52,40 @@
 #define CMD_JSON_OTA_FILENAME     "file"
 #define CMD_JSON_AP_MODE          "ap"
 #define CMD_JSON_BRIGHTNESS       "b"
+#define CMD_JSON_WEATHER_API_ID   "api_id"
 
-typedef struct {
+enum mqtt_state_e {
+    MQTT_STATE_DISCONNECTED,
+    MQTT_STATE_CONNECTED,
+    MQTT_STATE_SUBSCRIBED,
+    MQTT_STATE_UNSUBSCRIBED,
+};
+
+struct cmd_data_s {
     char *data;
     uint16_t len;
-} cmd_data_t;
+};
 
-typedef struct {
+struct mqtt_cmd_s {
     char *mqtt_client_id;
     char *mqtt_broker_ip;
     char *mqtt_data_topic;
     char *mqtt_cmd_topic;
     esp_mqtt_client_handle_t mqtt_client;
     QueueHandle_t cmd_recv_queue;
+    enum mqtt_state_e mqtt_state;
     bool initialized;
-} mqtt_cmd_t;
+};
+
+static const char *mqtt_state_string[] = {
+    "Disconnected",
+    "Connected",
+    "Subscribed",
+    "Unsubscribed"
+};
 
 static const char *TAG = "mqtt_cmd";
-static mqtt_cmd_t mqtt_cmd;
+static struct mqtt_cmd_s mqtt_cmd;
 
 static void do_reboot(void)
 {
@@ -82,7 +98,7 @@ static void do_reboot(void)
 static void mqtt_cmd_recv_cb(const char *data, uint16_t len)
 {
     char *data_buf;
-    cmd_data_t *cmd;
+    struct cmd_data_s *cmd;
 
     /* Allocate the data buffer */
     data_buf = malloc(len + 1);
@@ -92,7 +108,7 @@ static void mqtt_cmd_recv_cb(const char *data, uint16_t len)
     }
 
     /* Allocate the cmd */
-    cmd = malloc(sizeof(cmd_data_t));
+    cmd = malloc(sizeof(*cmd));
     if (!cmd) {
         ESP_LOGE(TAG, "Could not allocate command buffer!");
         free(data_buf);
@@ -118,7 +134,6 @@ static void mqtt_cmd_recv_cb(const char *data, uint16_t len)
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     int32_t event_id, void *event_data)
 {
-    ESP_LOGI(TAG, "MQTT event, base=%s, event_id=%" PRIi32 "", base, event_id);
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
     int msg_id;
@@ -127,24 +142,32 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
 
+        mqtt_cmd.mqtt_state = MQTT_STATE_CONNECTED;
+
         msg_id = esp_mqtt_client_subscribe(client, mqtt_cmd.mqtt_cmd_topic, MQTT_SUB_QOS);
-        ESP_LOGI(TAG, "MQTT subscribe successful, msg_id=%d", msg_id);
+        if (msg_id == -1 || msg_id == -2) {
+            ESP_LOGI(TAG, "Failed to subscribe to MQTT topic %s, msg_id %d",
+                mqtt_cmd.mqtt_cmd_topic, msg_id);
+        }
+        break;
+
+    case MQTT_EVENT_DISCONNECTED:
+        ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+        mqtt_cmd.mqtt_state = MQTT_STATE_DISCONNECTED;
+        break;
+
+    case MQTT_EVENT_SUBSCRIBED:
+        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+        mqtt_cmd.mqtt_state = MQTT_STATE_SUBSCRIBED;
 
         /* Send an unsolicited sys info message to the MQTT broker */
         mqtt_cmd_send_sys_info();
 
         break;
 
-    case MQTT_EVENT_DISCONNECTED:
-        ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-        break;
-
-    case MQTT_EVENT_SUBSCRIBED:
-        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-        break;
-
     case MQTT_EVENT_UNSUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+        mqtt_cmd.mqtt_state = MQTT_STATE_UNSUBSCRIBED;
         break;
 
     case MQTT_EVENT_PUBLISHED:
@@ -167,7 +190,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         break;
 
     default:
-        ESP_LOGI(TAG, "Other event id:%d", event->event_id);
         break;
     }
 }
@@ -431,7 +453,7 @@ static esp_err_t mqtt_cmd_set_broker_ip(const cJSON *root)
 
     if (!nvs) {
         ESP_LOGI(TAG, "Failed to get NVS handle");
-       return ESP_FAIL;
+        return ESP_FAIL;
     }
 
     broker_ip = cJSON_GetObjectItemCaseSensitive(root, CMD_JSON_BROKER_IP);
@@ -482,12 +504,40 @@ static esp_err_t mqtt_cmd_set_display_brightness(const cJSON *root)
     return ESP_OK;
 }
 
-static void mqtt_cmd_recv(const cmd_data_t *cmd)
+static esp_err_t mqtt_cmd_set_weather_api_id(const cJSON *root)
+{
+    cJSON *api_ip = NULL;
+    nvs_handle nvs = nvs_get_handle();
+
+    if (!nvs) {
+        ESP_LOGI(TAG, "Failed to get NVS handle");
+        return ESP_FAIL;
+    }
+
+    api_ip = cJSON_GetObjectItemCaseSensitive(root, CMD_JSON_WEATHER_API_ID);
+    if (api_ip == NULL || !cJSON_IsString(api_ip)) {
+        ESP_LOGE(TAG, "Wrong weather API ID!");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "CMD SET weather API ID: %s", api_ip->valuestring);
+
+    /* Save in flash, will be taken into consideration at the next reboot */
+    if (nvs_set_str(nvs, NVS_WEATHER_API_ID, api_ip->valuestring) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to write the weather API ID!");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+
+static void mqtt_cmd_recv(const struct cmd_data_s *cmd)
 {
     esp_err_t ret;
     cJSON *root = NULL;
     cJSON *cmd_nr = NULL;
-    const mqtt_cmd_sensors_data_t * sensors_data;
+    const struct mqtt_cmd_sensors_data_s *sensors_data;
  
     root = cJSON_Parse((char *)cmd->data);
     if (root == NULL) {
@@ -535,6 +585,10 @@ static void mqtt_cmd_recv(const cmd_data_t *cmd)
             ret = mqtt_cmd_set_display_brightness(root);
             break;
 
+        case CMD_SET_WEATHER_API_ID:
+            ret = mqtt_cmd_set_weather_api_id(root);
+            break;
+
         default:
             ESP_LOGE(TAG, "Command %d not implemented!", cmd_nr->valueint);
             ret = ESP_FAIL;
@@ -555,7 +609,7 @@ static void mqtt_cmd_recv(const cmd_data_t *cmd)
 
 static void mqtt_cmd_recv_task(void *arg)
 {
-    cmd_data_t *cmd;
+    struct cmd_data_s *cmd;
 
     ESP_LOGI(TAG, "Ready to receive commands");
 
@@ -574,6 +628,11 @@ static void mqtt_cmd_recv_task(void *arg)
 const char *mqtt_cmd_get_client_id(void)
 {
     return  mqtt_cmd.mqtt_client_id;
+}
+
+const char *mqtt_cmd_get_mqtt_state(void)
+{
+    return mqtt_state_string[mqtt_cmd.mqtt_state];
 }
 
 /*
@@ -649,7 +708,7 @@ esp_err_t mqtt_cmd_send_sys_info(void)
  * }
  */
 
-esp_err_t mqtt_cmd_send_sensors_info(const mqtt_cmd_sensors_data_t *sensors_data)
+esp_err_t mqtt_cmd_send_sensors_info(const struct mqtt_cmd_sensors_data_s *sensors_data)
 {
     esp_err_t ret = ESP_OK;
     cJSON *root = NULL;
@@ -666,7 +725,7 @@ esp_err_t mqtt_cmd_send_sensors_info(const mqtt_cmd_sensors_data_t *sensors_data
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Send sensors info: Temp %f, Humidity %f",
+    ESP_LOGI(TAG, "Send sensors info: Temp %.1f, Humidity %.1f",
         sensors_data->temp, sensors_data->humidity);
 
     if (!cJSON_AddNumberToObject(root, CMD_JSON_CMD, CMD_GET_SENSORS_INFO)  ||
@@ -699,9 +758,13 @@ esp_err_t mqtt_cmd_init(void)
 {
     /* No cleanup required, in case of failure the system will reboot */
 
-    mqtt_cmd.cmd_recv_queue = xQueueCreate(CMD_PARSE_QUEUE_LEN, sizeof(cmd_data_t));
+    if (mqtt_cmd.initialized)
+        return ESP_FAIL;
+
+    mqtt_cmd.cmd_recv_queue = xQueueCreate(CMD_PARSE_QUEUE_LEN,
+        sizeof( struct cmd_data_s));
     if (mqtt_cmd.cmd_recv_queue == NULL) {
-        ESP_LOGE(TAG, "Failed to create cmd queue!");
+        ESP_LOGE(TAG, "Failed to create MQTT cmd queue!");
         return ESP_FAIL;
     }
 
@@ -711,10 +774,11 @@ esp_err_t mqtt_cmd_init(void)
                     NULL,
                     CMD_RECV_TASK_PRIO,
                     NULL) != pdPASS)  {
-        ESP_LOGE(TAG, "Failed to create mqtt commands receiving task!");
+        ESP_LOGE(TAG, "Failed to create MQTT commands receiving task!");
         return ESP_FAIL;
     }
 
+    mqtt_cmd.mqtt_state = MQTT_STATE_DISCONNECTED;
     if (mqtt_start() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start MQTT client!");
         return ESP_FAIL;

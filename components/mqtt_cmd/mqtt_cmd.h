@@ -12,7 +12,7 @@ extern "C"
 {
 #endif
 
-typedef enum {
+enum mqtt_cmd_number_e {
     CMD_DO_REBOOT,
     /*
      * Command JSON format:
@@ -100,15 +100,27 @@ typedef enum {
      *
      * Action: Set and save the new brightness level.
      */
-} mqtt_cmd_number_t;
+  
+     CMD_SET_WEATHER_API_ID,
+    /*
+     * Command JSON format:
+     * {
+     *        "cmd":  7,
+     *        "id"    "WEATHER_API_ID"
+     * }
+     *
+     * Action: Save the new MQTT broker in the flash memory and reboot.
+     */
+};
 
-typedef struct {
+struct mqtt_cmd_sensors_data_s{
     float temp;
     float humidity;
-}mqtt_cmd_sensors_data_t;
+};
 
 const char *mqtt_cmd_get_client_id(void);
-esp_err_t mqtt_cmd_send_sensors_info(const mqtt_cmd_sensors_data_t *sensors_data);
+const char *mqtt_cmd_get_mqtt_state(void);
+esp_err_t mqtt_cmd_send_sensors_info(const struct mqtt_cmd_sensors_data_s *sensors_data);
 esp_err_t mqtt_cmd_send_sys_info(void);
 esp_err_t mqtt_cmd_init(void);
 

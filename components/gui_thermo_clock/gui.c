@@ -19,20 +19,23 @@
 #include "nvs_utils.h"
 #include "wifi.h"
 #include "main.h"
+#include "gui.h"
 
 /* 320 x 480 pixels display*/
 
-#define GUI_CLOCK_FONT                    dseg7_classic_bold_82
-#define GUI_SENSORS_FONT                  dseg7_classic_bold_62
-#define GUI_CLOCK_OFFSET_Y                10
-#define GUI_CLOCK_ROW_HEIGHT              110
-#define GUI_TEMP_HUMIDITY_RAW_HEIGHT      90
-#define GUI_TEMP_HUMIDITY_ICON_X_OFFSET   10
-#define GUI_TEMP_HUMIDITY_DATA_OFFSET_X   100
+#define GUI_CLOCK_FONT                    dseg7_classic_bold_80
+#define GUI_SENSORS_FONT                  dseg7_classic_bold_60
+#define GUI_CLOCK_OFFSET_Y                0
+#define GUI_CLOCK_ROW_HEIGHT              100
+#define GUI_TEMP_HUMIDITY_RAW_HEIGHT      80
+#define GUI_TEMP_HUMIDITY_ICON_X_OFFSET   5
+#define GUI_TEMP_HUMIDITY_DATA_OFFSET_X   84
+#define GUI_WEATHER_RAW_SHIFT_UP          6
 
-#define GUI_STATS_FONT                    lv_font_montserrat_22
+#define GUI_WEATHER_FONT                  lv_font_montserrat_24
+#define GUI_STATS_FONT                    lv_font_montserrat_24
 
-#define GUI_SETTINGS_FONT                 lv_font_montserrat_22
+#define GUI_SETTINGS_FONT                 lv_font_montserrat_24
 #define GUI_SETTINGS_Y_START_OFFSET       5
 #define GUI_SETTINGS_LABEL_TA_ALIGN_X     -20
 #define GUI_SETTINGS_TEXT_AREA_X_OFFSET   100
@@ -53,8 +56,7 @@ struct gui_s {
     lv_obj_t *temp_in_label;
     lv_obj_t *humidity_in_label;
     lv_obj_t *temp_out_label;
-    lv_obj_t *temp_in_image;
-    lv_obj_t *temp_out_image;
+    lv_obj_t *weather_label;
     lv_obj_t *stats_label;
     lv_obj_t *ssid_ta;
     lv_obj_t *ssid_label;
@@ -87,23 +89,36 @@ static void gui_dialog_error(const char *name, const char *text)
     lv_obj_set_style_text_font(mbox1, &GUI_SETTINGS_FONT, 0);
 }
 
-static void gui_update_sensors_labels(float temp_in, float humidity_in, float temp_out)
+static void gui_update_sensors_labels(float temp_in, float humidity_in, struct weather_data_s *weather_data)
 {
-    char buf[10];
+    const size_t buf_len = 64;
+    char buf[buf_len];
+
+    /* Make sure the string is NULL terminated */
+    buf[buf_len] = 0;
 
     /* dseg7 font space width takes 1/4 of a digit width */
-    snprintf(buf, sizeof(buf), "%s%4.1f", temp_in > 0 ? "    " : "", temp_in);
+    snprintf(buf, buf_len, "%s%4.1f", temp_in >= 0 ? "    " : "", temp_in);
     lv_label_set_text(gui.temp_in_label, buf);
 
-    snprintf(buf, sizeof(buf), "    %04.1f", humidity_in);
+    snprintf(buf, buf_len, "    %04.1f", humidity_in);
     lv_label_set_text(gui.humidity_in_label, buf);
 
-    snprintf(buf, sizeof(buf), "%s%4.1f", temp_out > 0 ? "    " : "", temp_out);
+    snprintf(buf, buf_len, "%s%04.1f", weather_data->temp >= 0 ? "    " : "", weather_data->temp);
     lv_label_set_text(gui.temp_out_label, buf);
+
+    if (strlen(weather_data->description))
+        snprintf(buf, buf_len, "%s, feels like %.1f°C\nMin. %.1f°C, Max. %.1f°C",
+            weather_data->description, weather_data->temp_feels,
+            weather_data->temp_min, weather_data->temp_max);
+    else
+        snprintf(buf, buf_len, "No weather info!");
+    lv_label_set_text(gui.weather_label, buf);
 }
 
 static void gui_tab_sensors(lv_obj_t *parent)
 {
+    lv_obj_t *icon;
     int32_t y_pos = GUI_CLOCK_OFFSET_Y;
 
    /* First row item: clok time in HH:MM format */
@@ -115,9 +130,9 @@ static void gui_tab_sensors(lv_obj_t *parent)
     y_pos += GUI_CLOCK_ROW_HEIGHT;
 
     /* Second row items: indoor temperature icon and temperature in celsius */
-    gui.temp_in_image = lv_image_create(parent);
-    lv_image_set_src(gui.temp_in_image, &icon_temperature_in);
-    lv_obj_align(gui.temp_in_image, LV_ALIGN_TOP_LEFT,
+    icon = lv_image_create(parent);
+    lv_image_set_src(icon, &icon_temperature_in);
+    lv_obj_align(icon, LV_ALIGN_TOP_LEFT,
         GUI_TEMP_HUMIDITY_ICON_X_OFFSET, y_pos);
 
     gui.temp_in_label = lv_label_create(parent);
@@ -129,9 +144,9 @@ static void gui_tab_sensors(lv_obj_t *parent)
     y_pos += GUI_TEMP_HUMIDITY_RAW_HEIGHT;
 
     /* Third row items: indoor humidity icon and relative humidity */
-    gui.temp_out_image = lv_image_create(parent);
-    lv_image_set_src(gui.temp_out_image, &icon_humidity_in);
-    lv_obj_align(gui.temp_out_image, LV_ALIGN_TOP_LEFT,
+    icon = lv_image_create(parent);
+    lv_image_set_src(icon, &icon_humidity_in);
+    lv_obj_align(icon, LV_ALIGN_TOP_LEFT,
         GUI_TEMP_HUMIDITY_ICON_X_OFFSET, y_pos);
 
     gui.humidity_in_label = lv_label_create(parent);
@@ -143,9 +158,9 @@ static void gui_tab_sensors(lv_obj_t *parent)
     y_pos += GUI_TEMP_HUMIDITY_RAW_HEIGHT;
 
     /* Forth row items: outdoor temperature icon and temperature in celsius */
-    gui.temp_out_image = lv_image_create(parent);
-    lv_image_set_src(gui.temp_out_image, &icon_temperature_out);
-    lv_obj_align(gui.temp_out_image, LV_ALIGN_TOP_LEFT,
+    icon = lv_image_create(parent);
+    lv_image_set_src(icon, &icon_temperature_out);
+    lv_obj_align(icon, LV_ALIGN_TOP_LEFT,
         GUI_CLOCK_OFFSET_Y, y_pos);
 
     gui.temp_out_label = lv_label_create(parent);
@@ -153,6 +168,13 @@ static void gui_tab_sensors(lv_obj_t *parent)
     lv_obj_set_style_text_color(gui.temp_out_label, gui.text_color, LV_PART_MAIN);
     lv_obj_align(gui.temp_out_label, LV_ALIGN_TOP_LEFT,
         GUI_TEMP_HUMIDITY_DATA_OFFSET_X, y_pos);
+
+    y_pos += GUI_TEMP_HUMIDITY_RAW_HEIGHT - GUI_WEATHER_RAW_SHIFT_UP;
+
+    gui.weather_label = lv_label_create(parent);
+    lv_obj_set_style_text_font(gui.weather_label, &GUI_WEATHER_FONT, 0);
+    lv_obj_set_style_text_color(gui.weather_label, gui.text_color, LV_PART_MAIN);
+    lv_obj_align(gui.weather_label, LV_ALIGN_TOP_LEFT, 0, y_pos);
 }
 
 static void gui_tab_stats(lv_obj_t *parent)
@@ -191,7 +213,11 @@ static void gui_update_stats(void)
 
     p = buf;
 
-    len = snprintf(p, buf_len, "Sensor id: %s\n", mqtt_cmd_get_client_id());
+    len = snprintf(p, buf_len, "Device id: %s\n", mqtt_cmd_get_client_id());
+    p += len;
+    buf_len -= len;
+
+    len = snprintf(p, buf_len, "MQTT state: %s\n", mqtt_cmd_get_mqtt_state());
     p += len;
     buf_len -= len;
 
@@ -223,7 +249,7 @@ static void gui_update_stats(void)
     p += len;
     buf_len -= len;
 
-    len = snprintf(p, buf_len, "\nHeap free stats\n");
+    len = snprintf(p, buf_len, "Heap free stats\n");
     p += len;
     buf_len -= len;
 
@@ -234,7 +260,7 @@ static void gui_update_stats(void)
     p += len;
     buf_len -= len;
 
-    len = snprintf(p, buf_len, "\nWifi info\n");
+    len = snprintf(p, buf_len, "Wifi info\n");
     p += len;
     buf_len -= len;
 
@@ -250,11 +276,15 @@ static void gui_update_stats(void)
         GUI_STATS_INFO_OFFSET"Mode: %s\n"
         GUI_STATS_INFO_OFFSET"SSID: %s\n"
         GUI_STATS_INFO_OFFSET"IP: "IPSTR"\n"
-        GUI_STATS_INFO_OFFSET"State: %s Connected\n",
+        GUI_STATS_INFO_OFFSET"State: %s Connected",
         wifi_is_ap() ? "AP" : "Station",
         wifi_is_ap() ? (char *)wifi_cfg->ap.ssid : (char *)wifi_cfg->sta.ssid,
         IP2STR(&ip_info.ip),
         wifi_is_connected() ? "" : "Not");
+
+    /* Make sure the string is NULL terminated */
+    if (!buf_len)
+        buf[len - 1] = 0;
 
     lv_label_set_text(gui.stats_label, buf);
 
@@ -453,11 +483,11 @@ static void gui_timer_cb(lv_timer_t *timer)
     lvgl_port_unlock();
 }
 
-esp_err_t gui_update_sensors(float temp_in, float humidity_in, float temp_out)
+esp_err_t gui_update_sensors(float temp_in, float humidity_in, struct weather_data_s *weather_data)
 {
     lvgl_port_lock(0);
 
-    gui_update_sensors_labels(temp_in, humidity_in, temp_out);
+    gui_update_sensors_labels(temp_in, humidity_in, weather_data);
 
     lvgl_port_unlock();
 

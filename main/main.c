@@ -23,21 +23,24 @@
 #include "driver/i2c.h"
 #include "hdc1080.h"
 #include "mqtt_cmd.h"
+#include "weather.h"
 
 /* Main task settings */
 #define MAIN_TASK_LOOP_DELAY_MS        1000
 #define MAIN_TASK_PRIORITY             10
 #define MAIN_TASK_STACK_SIZE           4096
 
-#define SENSOR_I2C_BUS_NUM             I2C_NUM_1
-#define SENSOR_I2C_BUS_CLK_SPEED       100000
-#define SENSOR_I2C_SDA_PIN_NUM         GPIO_NUM_17
-#define SENSOR_I2C_SCL_PIN_NUM         GPIO_NUM_18
+#define SENSORS_I2C_BUS_NUM            I2C_NUM_1
+#define SENSORS_I2C_BUS_CLK_SPEED      100000
+#define SENSORS_I2C_SDA_PIN_NUM        GPIO_NUM_17
+#define SENSORS_I2C_SCL_PIN_NUM        GPIO_NUM_18
 
 /* sensors read and send data interval in miliseconds */
-#define SENSOR_READ_DATA_INTERVAL_MS    (5 * 1000)
-#define SENSOR_SEND_DATA_INTERVAL_MS    (60 * 1000)
+#define SENSORS_READ_DATA_INTERVAL_MS   (5 * 1000)
+#define SENSORS_SEND_DATA_INTERVAL_MS   (60 * 1000)
 #define SENSORS_SEND_DATA_RETRIES       10
+
+#define WEATHER_READ_DATA_INTERVAL_MS   (600 * 1000)
 
 /*
  * std offset dst [offset],start[/time],end[/time]
@@ -69,7 +72,7 @@ static const char *TAG = "esp32_iot";
 static hdc1080_sensor_t *hdc1080_sensor;
 
 /* Last read sensors data */
-static mqtt_cmd_sensors_data_t esp32_iot_sensors_data;
+static struct mqtt_cmd_sensors_data_s esp32_iot_sensors_data;
 
 static esp_err_t ntp_init(void)
 {
@@ -84,11 +87,11 @@ static esp_err_t i2c_sensors_bus_init(i2c_port_t bus)
 
     const i2c_config_t i2c_conf = {
         .mode = I2C_MODE_MASTER,
-        .sda_io_num = SENSOR_I2C_SDA_PIN_NUM,
+        .sda_io_num = SENSORS_I2C_SDA_PIN_NUM,
         .sda_pullup_en = GPIO_PULLUP_DISABLE,
-        .scl_io_num = SENSOR_I2C_SCL_PIN_NUM,
+        .scl_io_num = SENSORS_I2C_SCL_PIN_NUM,
         .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = SENSOR_I2C_BUS_CLK_SPEED
+        .master.clk_speed = SENSORS_I2C_BUS_CLK_SPEED
     };
 
     ret = i2c_param_config(bus, &i2c_conf);
@@ -109,15 +112,15 @@ static void main_task(void *arg)
 {
     esp_err_t ret;
     float temp, humidity;
-    uint32_t sensors_read_elapsed_ms = SENSOR_READ_DATA_INTERVAL_MS;
-    uint32_t sensors_send_elapsed_ms = SENSOR_SEND_DATA_INTERVAL_MS;
+    struct weather_data_s weather_data;
+    uint32_t weather_read_elapsed_ms = WEATHER_READ_DATA_INTERVAL_MS;
+    uint32_t sensors_read_elapsed_ms = SENSORS_READ_DATA_INTERVAL_MS;
+    uint32_t sensors_send_elapsed_ms = SENSORS_SEND_DATA_INTERVAL_MS;
     uint32_t send_retries = 0;
 
     while (true) {
-        /* Actions done each MAIN_TASK_LOOP_DELAY interval */
-
         sensors_read_elapsed_ms += MAIN_TASK_LOOP_DELAY_MS;
-        if (sensors_read_elapsed_ms >= SENSOR_READ_DATA_INTERVAL_MS) {
+        if (sensors_read_elapsed_ms >= SENSORS_READ_DATA_INTERVAL_MS) {
             ret = hdc1080_read(hdc1080_sensor, &temp, &humidity);
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "Failed to read HDC1080 sensor, ret %d", ret);
@@ -125,7 +128,19 @@ static void main_task(void *arg)
                 ESP_LOGI(TAG, "Temp %f, Humidity %f", temp, humidity);
             }
 
-            gui_update_sensors(temp, humidity, -23.1);
+            weather_read_elapsed_ms += sensors_read_elapsed_ms;
+            if (weather_read_elapsed_ms >= WEATHER_READ_DATA_INTERVAL_MS) {
+                ret = weather_get_info(&weather_data);
+                if (ret != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to get weather data, ret %d", ret);
+                }
+                weather_read_elapsed_ms = 0;
+            }
+
+            ret = gui_update_sensors(temp, humidity, &weather_data);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to update gui, ret %d", ret);
+            }
 
             esp32_iot_sensors_data.temp = temp;
             esp32_iot_sensors_data.humidity = humidity;
@@ -135,14 +150,14 @@ static void main_task(void *arg)
 
         /* Check if should send sensors data to the MQTT broker */
         sensors_send_elapsed_ms += MAIN_TASK_LOOP_DELAY_MS;
-        if (sensors_send_elapsed_ms >= SENSOR_SEND_DATA_INTERVAL_MS) {
+        if (sensors_send_elapsed_ms >= SENSORS_SEND_DATA_INTERVAL_MS) {
             ret = mqtt_cmd_send_sensors_info(&esp32_iot_sensors_data);
             if (ret != ESP_OK) {
                 /* sensors info not sent */
                 ESP_LOGE(TAG, "Failed to send sensor info, ret %d", ret);
 
                 /* Set retry interval to 1/10 of sensor read time. For 10min will retry in 1min */
-                sensors_send_elapsed_ms = (SENSOR_SEND_DATA_INTERVAL_MS * 9) / 10;
+                sensors_send_elapsed_ms = (SENSORS_SEND_DATA_INTERVAL_MS * 9) / 10;
                 send_retries ++;
 
                 /* Reboot if we tried too many times */
@@ -155,25 +170,16 @@ static void main_task(void *arg)
 
             sensors_send_elapsed_ms = 0;
 #if 1
-            char *stats_buf;
-            char time_buf[10];
-            struct tm timeinfo;
-            time_t now;
-    
             /* Print some debug stats */
-
-            time(&now);
-            localtime_r(&now, &timeinfo);
-            printf("Time: %s\n", time_buf);
-
-            printf("Free heap %"PRIu32"B (%"PRIu32"B internal memory)\n",
-                esp_get_free_heap_size(), esp_get_free_internal_heap_size());
-
-            printf( "Task Name\tStatus\tPrio\tHWM\tTask\tAffinity\n");
-            stats_buf = malloc(1024);
-            vTaskList(stats_buf);
-            printf("%s\n", stats_buf);
-            free(stats_buf);
+            char *stats_buf = malloc(1024);
+            if (stats_buf == NULL) {
+                ESP_LOGE(TAG, "Failed to allocate memory for debug stats");
+            } else {
+                printf( "Task Name\tStatus\tPrio\tHWM\tTask\tAffinity\n");
+                vTaskList(stats_buf);
+                printf("%s\n", stats_buf);
+                free(stats_buf);
+            }
 #endif
         }
 
@@ -181,7 +187,7 @@ static void main_task(void *arg)
     }
 }
 
-void esp32_iot_sensors_get_data(const mqtt_cmd_sensors_data_t **sensors_data)
+void esp32_iot_sensors_get_data(const struct mqtt_cmd_sensors_data_s **sensors_data)
 {
     *sensors_data = &esp32_iot_sensors_data;
 }
@@ -268,13 +274,13 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Display initialization done");
 
-    ret = i2c_sensors_bus_init(SENSOR_I2C_BUS_NUM);
+    ret = i2c_sensors_bus_init(SENSORS_I2C_BUS_NUM);
     if (ret != ESP_OK)
         FATAL_ERROR("Failed to init sensors i2c bus, ret %d", ret);
 
     ESP_LOGI(TAG, "Sensors I2C bus initialization done");
     
-    hdc1080_sensor = hdc1080_init(SENSOR_I2C_BUS_NUM);
+    hdc1080_sensor = hdc1080_init(SENSORS_I2C_BUS_NUM);
     if (hdc1080_sensor == NULL)
         FATAL_ERROR("Failed to init HDC1080 sensor");
 

@@ -7,12 +7,14 @@
 #ifndef __GUI_H__
 #define __GUI_H__
 
+#include "weather.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 esp_err_t gui_start(void);
-esp_err_t gui_update_sensors(float temp_in, float humidity_in, float temp_out);
+esp_err_t gui_update_sensors(float temp_in, float humidity_in, struct weather_data_s *weather);
 void gui_ota_progress(uint32_t progress);
 void gui_ota_start(void);
 void gui_ota_stop(void);

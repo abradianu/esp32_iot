@@ -1,6 +1,6 @@
 set(srcs "gui.c")
-list(APPEND srcs "dseg7_classic_bold_62.c")
-list(APPEND srcs "dseg7_classic_bold_82.c")
+list(APPEND srcs "dseg7_classic_bold_60.c")
+list(APPEND srcs "dseg7_classic_bold_80.c")
 list(APPEND srcs "icon_temperature_in.c")
 list(APPEND srcs "icon_temperature_out.c")
 list(APPEND srcs "icon_humidity_in.c")

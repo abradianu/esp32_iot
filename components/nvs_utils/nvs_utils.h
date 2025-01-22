@@ -18,6 +18,7 @@ extern "C" {
 #define NVS_MQTT_CLIENT_ID       "MqttClienId"
 #define NVS_MQTT_BROKER_IP       "MqttBrokerIP"
 #define NVS_DISPLAY_BRIGHTNESS   "Brightness"
+#define NVS_WEATHER_API_ID       "WeatherApiId"
 
 #define NVS_WIFI_AP_MODE         "WiFiApMode"
 #define NVS_WIFI_SSID            "WiFiSSID"
