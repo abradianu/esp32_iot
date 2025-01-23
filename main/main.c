@@ -57,7 +57,7 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define FW_VERSION              "1.03"
+#define FW_VERSION              "1.04"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
