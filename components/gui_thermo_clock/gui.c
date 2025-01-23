@@ -92,7 +92,7 @@ static void gui_dialog_error(const char *name, const char *text)
 static void gui_update_sensors_labels(float temp_in, float humidity_in, struct weather_data_s *weather_data)
 {
     const size_t buf_len = 64;
-    char buf[buf_len];
+    char buf[buf_len + 1];
 
     /* Make sure the string is NULL terminated */
     buf[buf_len] = 0;
@@ -108,7 +108,7 @@ static void gui_update_sensors_labels(float temp_in, float humidity_in, struct w
     lv_label_set_text(gui.temp_out_label, buf);
 
     if (strlen(weather_data->description))
-        snprintf(buf, buf_len, "%s, feels like %.1f°C\nMin. %.1f°C, Max. %.1f°C",
+        snprintf(buf, buf_len, "%s, feels %.1f°C\nMin. %.1f°C, Max. %.1f°C",
             weather_data->description, weather_data->temp_feels,
             weather_data->temp_min, weather_data->temp_max);
     else

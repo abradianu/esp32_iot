@@ -17,6 +17,11 @@
 #define WEATHER_DATA_BUFFER_SIZE     32768
 #define WEATHER_HTTP_CLIENT_BUFFSIZE 2048
 
+struct weather_condition_s{
+    int code;
+    const char* text;
+} WeatherCondition;
+
 struct weather_user_data_s {
     char *buf;
     size_t data_len;
@@ -24,6 +29,48 @@ struct weather_user_data_s {
 };
 
 static const char *TAG = "weather";
+
+static const struct weather_condition_s weather_conditions[] = {
+    {1000, "Clear"},                        // Clear / Sunny
+    {1003, "Partly cloudy"},               // Partly cloudy
+    {1006, "Cloudy"},                      // Cloudy
+    {1009, "Overcast"},                    // Overcast
+    {1030, "Mist"},                        // Mist
+    {1063, "Patchy rain"},                 // Patchy rain possible
+    {1072, "Freezing drizzle"},            // Patchy freezing drizzle possible
+    {1150, "Light drizzle"},               // Patchy light drizzle
+    {1153, "Light drizzle"},               // Light drizzle
+    {1180, "Patchy rain"},                 // Patchy light rain
+    {1183, "Light rain"},                  // Light rain
+    {1186, "Moderate rain"},               // Moderate rain at times
+    {1189, "Moderate rain"},               // Moderate rain
+    {1192, "Heavy rain"},                  // Heavy rain at times
+    {1195, "Heavy rain"},                  // Heavy rain
+    {1240, "Light rain shower"},           // Light rain shower
+    {1243, "Heavy rain shower"},           // Moderate or heavy rain shower
+    {1273, "Thunder rain"},                // Patchy light rain with thunder
+    {1276, "Thunderstorm rain"},           // Moderate or heavy rain with thunder
+    {1066, "Patchy snow"},                 // Patchy snow possible
+    {1114, "Blowing snow"},                // Blowing snow
+    {1117, "Blizzard"},                    // Blizzard
+    {1204, "Freezing rain"},               // Light freezing rain
+    {1210, "Light snow"},                  // Light snow
+    {1213, "Moderate snow"},               // Moderate snow
+    {1216, "Heavy snow"},                  // Heavy snow
+    {1237, "Ice pellets"},                 // Ice pellets
+    {1255, "Snow showers"},                // Light snow showers
+    {1279, "Snow thunder"},                // Patchy light snow with thunder
+    {1282, "Snow thunderstorm"},           // Moderate or heavy snow with thunder
+};
+
+static const char *weather_get_text(int code) {
+    for (size_t i = 0; i < sizeof(weather_conditions) / sizeof(weather_conditions[0]); i++) {
+        if (weather_conditions[i].code == code) {
+            return weather_conditions[i].text;
+        }
+    }
+    return "Unknown";
+}
 
 static esp_err_t weather_http_message_parse(struct weather_user_data_s *weather_user_data)
 {
@@ -92,12 +139,12 @@ static esp_err_t weather_http_message_parse(struct weather_user_data_s *weather_
 
                     condition_obj = cJSON_GetObjectItem(day_obj, "condition");
                     if (condition_obj) {
-                        json_obj = cJSON_GetObjectItem(condition_obj, "text");
-                        if (json_obj && cJSON_IsString(json_obj)) {
-                            ESP_LOGI(TAG, "Condition: %s", json_obj->valuestring);
-                            strncpy(weather_user_data->weather_data->description,
-                                json_obj->valuestring,
-                                sizeof(weather_user_data->weather_data->description) - 1);
+                        json_obj = cJSON_GetObjectItem(condition_obj, "code");
+                        if (json_obj) {
+                            ESP_LOGI(TAG, "Condition code: %d", json_obj->valueint);
+                                strncpy(weather_user_data->weather_data->description,
+                                    weather_get_text(json_obj->valueint),
+                                    sizeof(weather_user_data->weather_data->description));
                         } else {
                             ESP_LOGE(TAG, "Condition text field not found");
                             goto error_json_delete;
@@ -166,8 +213,6 @@ esp_err_t weather_get_info(struct weather_data_s *weather_data)
     esp_http_client_handle_t client;
     esp_http_client_config_t config = {0};
     struct weather_user_data_s weather_user_data;
-
-    memset(weather_data, 0, sizeof(*weather_data));
 
     /* Do allocations only once */
     if (weather_url == NULL) {

@@ -17,7 +17,7 @@ struct weather_data_s {
     float temp_min;
     float temp_max;
     float temp_feels;
-    char description[16];
+    char description[18];
 };
 
 esp_err_t weather_get_info(struct weather_data_s *weather);
