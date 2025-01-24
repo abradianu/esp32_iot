@@ -30,10 +30,11 @@
 #define GUI_TEMP_HUMIDITY_RAW_HEIGHT      80
 #define GUI_TEMP_HUMIDITY_ICON_X_OFFSET   5
 #define GUI_TEMP_HUMIDITY_DATA_OFFSET_X   84
-#define GUI_WEATHER_RAW_SHIFT_UP          6
 
+#define GUI_WEATHER_RAW_SHIFT_UP          6
 #define GUI_WEATHER_FONT                  lv_font_montserrat_24
-#define GUI_STATS_FONT                    lv_font_montserrat_24
+
+#define GUI_STATS_FONT                    lv_font_montserrat_22
 
 #define GUI_SETTINGS_FONT                 lv_font_montserrat_24
 #define GUI_SETTINGS_Y_START_OFFSET       5
@@ -50,6 +51,9 @@
 #define GUI_TEXT_COLOR                    0x99D9EA
 
 #define GUI_STATS_INFO_OFFSET             "    "
+
+#define GUI_STATS_PERIOD_MS               5000
+#define GUI_TIMER_PERIOD_MS               500
 
 struct gui_s {
     lv_obj_t *time_label;
@@ -195,6 +199,7 @@ static void gui_update_stats(void)
     esp_netif_ip_info_t ip_info;
     float temperature;
     wifi_config_t *wifi_cfg;
+    wifi_ap_record_t ap_info;
 
     buf = malloc(buf_len);
     if (buf == NULL) {
@@ -213,7 +218,8 @@ static void gui_update_stats(void)
 
     p = buf;
 
-    len = snprintf(p, buf_len, "Device id: %s\n", mqtt_cmd_get_client_id());
+    len = snprintf(p, buf_len, "Device id: %s\n",
+        mqtt_cmd_get_client_id() == NULL ? "Not set" : mqtt_cmd_get_client_id());
     p += len;
     buf_len -= len;
 
@@ -267,20 +273,29 @@ static void gui_update_stats(void)
     if (wifi_is_ap()) {
         esp_wifi_get_config(WIFI_IF_AP, wifi_cfg);
         esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_AP_DEF"), &ip_info);
+
+        len = snprintf(p, buf_len,
+            GUI_STATS_INFO_OFFSET"Mode: AP\n"
+            GUI_STATS_INFO_OFFSET"SSID: %s\n"
+            GUI_STATS_INFO_OFFSET"IP: "IPSTR,
+                (char *)wifi_cfg->ap.ssid, IP2STR(&ip_info.ip));
     } else {
         esp_wifi_get_config(WIFI_IF_STA, wifi_cfg);
         esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ip_info);
-    }
+        esp_wifi_sta_get_ap_info(&ap_info);
 
-    len = snprintf(p, buf_len,
-        GUI_STATS_INFO_OFFSET"Mode: %s\n"
-        GUI_STATS_INFO_OFFSET"SSID: %s\n"
-        GUI_STATS_INFO_OFFSET"IP: "IPSTR"\n"
-        GUI_STATS_INFO_OFFSET"State: %s Connected",
-        wifi_is_ap() ? "AP" : "Station",
-        wifi_is_ap() ? (char *)wifi_cfg->ap.ssid : (char *)wifi_cfg->sta.ssid,
-        IP2STR(&ip_info.ip),
-        wifi_is_connected() ? "" : "Not");
+        len = snprintf(p, buf_len,
+            GUI_STATS_INFO_OFFSET"Mode: Station\n"
+            GUI_STATS_INFO_OFFSET"SSID: %s\n"
+            GUI_STATS_INFO_OFFSET"IP: "IPSTR"\n"
+            GUI_STATS_INFO_OFFSET"State: %s Connected\n"
+            GUI_STATS_INFO_OFFSET"RSSI: %ddBm",
+            (char *)wifi_cfg->sta.ssid,
+            IP2STR(&ip_info.ip),
+            wifi_is_connected() ? "" : "Not",
+            ap_info.rssi);
+    }
+    buf_len -= len;
 
     /* Make sure the string is NULL terminated */
     if (!buf_len)
@@ -464,13 +479,15 @@ static void gui_timer_cb(lv_timer_t *timer)
     char time_buf[10];
     struct tm timeinfo;
     time_t now;
-    static uint8_t print_dots;
+    static uint32_t cnt = 0;
 
+    /* GUI_TIMER_PERIOD_MS */
+
+    cnt++;
     time(&now);
     localtime_r(&now, &timeinfo);
 
-    print_dots ^= 1;
-    if (print_dots)
+    if (cnt & 1)
         strftime(time_buf, sizeof(time_buf), "%H:%M", &timeinfo);
     else
         strftime(time_buf, sizeof(time_buf), "%H %M", &timeinfo);
@@ -478,7 +495,8 @@ static void gui_timer_cb(lv_timer_t *timer)
     lvgl_port_lock(0);
 
     lv_label_set_text(gui.time_label, time_buf);
-    gui_update_stats();
+    if (cnt % (GUI_STATS_PERIOD_MS / GUI_TIMER_PERIOD_MS) == 0)
+        gui_update_stats();
 
     lvgl_port_unlock();
 }
@@ -502,7 +520,7 @@ esp_err_t gui_start(void)
 
     lvgl_port_lock(0);
 
-    clock_timer = lv_timer_create(gui_timer_cb, 500, NULL);
+    clock_timer = lv_timer_create(gui_timer_cb, GUI_TIMER_PERIOD_MS, NULL);
     if (clock_timer == NULL) {
         ESP_LOGE(TAG, "Failed to create LVGL timer");
         goto err_lvgl_unlock;

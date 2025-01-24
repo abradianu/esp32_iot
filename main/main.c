@@ -24,23 +24,25 @@
 #include "hdc1080.h"
 #include "mqtt_cmd.h"
 #include "weather.h"
+#include "esp_task_wdt.h"
 
 /* Main task settings */
-#define MAIN_TASK_LOOP_DELAY_MS        1000
-#define MAIN_TASK_PRIORITY             10
-#define MAIN_TASK_STACK_SIZE           4096
+#define MAIN_TASK_PRIORITY                10
+#define MAIN_TASK_STACK_SIZE              4096
 
-#define SENSORS_I2C_BUS_NUM            I2C_NUM_1
-#define SENSORS_I2C_BUS_CLK_SPEED      100000
-#define SENSORS_I2C_SDA_PIN_NUM        GPIO_NUM_17
-#define SENSORS_I2C_SCL_PIN_NUM        GPIO_NUM_18
+#define SENSORS_I2C_BUS_NUM               I2C_NUM_1
+#define SENSORS_I2C_BUS_CLK_SPEED         100000
+#define SENSORS_I2C_SDA_PIN_NUM           GPIO_NUM_17
+#define SENSORS_I2C_SCL_PIN_NUM           GPIO_NUM_18
 
-/* sensors read and send data interval in miliseconds */
-#define SENSORS_READ_DATA_INTERVAL_MS   (5 * 1000)
-#define SENSORS_SEND_DATA_INTERVAL_MS   (60 * 1000)
-#define SENSORS_SEND_DATA_RETRIES       10
-
-#define WEATHER_READ_DATA_INTERVAL_MS   (600 * 1000)
+/* sensors read and send data intervals in ticks */
+#define SENSORS_READ_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(5 * 1000)
+#define SENSORS_SEND_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(60 * 1000)
+#define WEATHER_READ_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(5 * 60 * 1000)
+#define WDT_FEED_INTERVAL_TICKS           pdMS_TO_TICKS(CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000 / 2)
+/* Retry interval in case of send error and number of retries */
+#define SENSORS_SEND_DATA_RETRY_TICKS     pdMS_TO_TICKS(10 * 1000)
+#define SENSORS_SEND_DATA_RETRIES         20
 
 /*
  * std offset dst [offset],start[/time],end[/time]
@@ -111,53 +113,61 @@ static esp_err_t i2c_sensors_bus_init(i2c_port_t bus)
 static void main_task(void *arg)
 {
     esp_err_t ret;
+    uint32_t send_retries = 0;
     float temp, humidity;
     struct weather_data_s weather_data;
-    uint32_t weather_read_elapsed_ms = WEATHER_READ_DATA_INTERVAL_MS;
-    uint32_t sensors_read_elapsed_ms = SENSORS_READ_DATA_INTERVAL_MS;
-    uint32_t sensors_send_elapsed_ms = SENSORS_SEND_DATA_INTERVAL_MS;
-    uint32_t send_retries = 0;
+    TickType_t weather_last_read_ticks = portMAX_DELAY/2;
+    TickType_t sensors_last_read_ticks = portMAX_DELAY/2;
+    TickType_t sensors_last_send_ticks = portMAX_DELAY/2;
+    TickType_t ticks, delay_ticks, delay_ticks_next;
+
+    /* Add this task to the watchdog monitor */
+    if (esp_task_wdt_add(NULL) != ESP_OK)
+        FATAL_ERROR("Failed to add watchdog!");
 
     while (true) {
-        sensors_read_elapsed_ms += MAIN_TASK_LOOP_DELAY_MS;
-        if (sensors_read_elapsed_ms >= SENSORS_READ_DATA_INTERVAL_MS) {
+        /* Check whether to read weather info */
+        ticks = xTaskGetTickCount();
+        if (ticks - weather_last_read_ticks >= WEATHER_READ_DATA_INTERVAL_TICKS &&
+            wifi_is_connected()) {
+            weather_last_read_ticks = ticks;
+
+            ret = weather_get_info(&weather_data);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to get weather data, ret %d", ret);
+            }
+        }
+
+        /* Check whether to read sensors info */
+        ticks = xTaskGetTickCount();
+        if (ticks - sensors_last_read_ticks >= SENSORS_READ_DATA_INTERVAL_TICKS) {
+            sensors_last_read_ticks = ticks;
+
             ret = hdc1080_read(hdc1080_sensor, &temp, &humidity);
             if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to read HDC1080 sensor, ret %d", ret);
+                FATAL_ERROR("Failed to read HDC1080 sensor, ret %d", ret);
             } else {
-                ESP_LOGI(TAG, "Temp %f, Humidity %f", temp, humidity);
-            }
+                esp32_iot_sensors_data.temp = temp;
+                esp32_iot_sensors_data.humidity = humidity;
 
-            weather_read_elapsed_ms += sensors_read_elapsed_ms;
-            if (weather_read_elapsed_ms >= WEATHER_READ_DATA_INTERVAL_MS) {
-                ret = weather_get_info(&weather_data);
-                if (ret != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to get weather data, ret %d", ret);
-                }
-                weather_read_elapsed_ms = 0;
+                ESP_LOGI(TAG, "Temp %f, Humidity %f", temp, humidity);
             }
 
             ret = gui_update_sensors(temp, humidity, &weather_data);
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "Failed to update gui, ret %d", ret);
             }
-
-            esp32_iot_sensors_data.temp = temp;
-            esp32_iot_sensors_data.humidity = humidity;
-
-            sensors_read_elapsed_ms = 0;
         }
 
-        /* Check if should send sensors data to the MQTT broker */
-        sensors_send_elapsed_ms += MAIN_TASK_LOOP_DELAY_MS;
-        if (sensors_send_elapsed_ms >= SENSORS_SEND_DATA_INTERVAL_MS) {
+        /* Check whether to send sensors data to the MQTT broker */
+        ticks = xTaskGetTickCount();
+        if (ticks - sensors_last_send_ticks >= SENSORS_SEND_DATA_INTERVAL_TICKS) {
             ret = mqtt_cmd_send_sensors_info(&esp32_iot_sensors_data);
             if (ret != ESP_OK) {
                 /* sensors info not sent */
                 ESP_LOGE(TAG, "Failed to send sensor info, ret %d", ret);
 
-                /* Set retry interval to 1/10 of sensor read time. For 10min will retry in 1min */
-                sensors_send_elapsed_ms = (SENSORS_SEND_DATA_INTERVAL_MS * 9) / 10;
+                sensors_last_send_ticks += SENSORS_SEND_DATA_RETRY_TICKS;
                 send_retries ++;
 
                 /* Reboot if we tried too many times */
@@ -166,10 +176,10 @@ static void main_task(void *arg)
                 }
             } else {
                 send_retries = 0;
+                sensors_last_send_ticks = ticks;
             }
 
-            sensors_send_elapsed_ms = 0;
-#if 1
+#if 0
             /* Print some debug stats */
             char *stats_buf = malloc(1024);
             if (stats_buf == NULL) {
@@ -183,7 +193,23 @@ static void main_task(void *arg)
 #endif
         }
 
-        vTaskDelay(pdMS_TO_TICKS(MAIN_TASK_LOOP_DELAY_MS));
+        /* Calculate the next delay interval based on which action timeouts first */
+        ticks = xTaskGetTickCount();
+        delay_ticks_next = SENSORS_READ_DATA_INTERVAL_TICKS - (ticks - sensors_last_read_ticks);
+        delay_ticks = SENSORS_SEND_DATA_INTERVAL_TICKS - (ticks - sensors_last_send_ticks);
+        if (delay_ticks_next > delay_ticks)
+            delay_ticks_next = delay_ticks;
+        delay_ticks = WEATHER_READ_DATA_INTERVAL_TICKS - (ticks - weather_last_read_ticks);
+        if (delay_ticks_next > delay_ticks)
+            delay_ticks_next = delay_ticks;
+
+        if (delay_ticks_next > WDT_FEED_INTERVAL_TICKS)
+            delay_ticks_next = WDT_FEED_INTERVAL_TICKS;
+
+        vTaskDelay(delay_ticks_next);
+
+        /* Feed the watchdog to prevent reset */
+        esp_task_wdt_reset();
     }
 }
 
@@ -220,7 +246,6 @@ void app_main(void)
     ESP_LOGI(TAG, "NVS initialization done");
 
     base_mac = nvs_get_base_mac();
-    ESP_LOGI(TAG, "BASE MAC  : %s", base_mac);
 
     /* Read WiFi mode from NVS */
     nvs_get_u8(nvs, NVS_WIFI_AP_MODE, &ap_mode);
@@ -254,15 +279,11 @@ void app_main(void)
         ESP_LOGI(TAG, "WiFi initialization done");
     }
 
+    ESP_LOGI(TAG, "BASE MAC: %s", base_mac);
+
     /* Set timezone */
     setenv("TZ", TIMEZONE, 1);
     tzset();
-
-    ret = ntp_init();
-    if (ret != ESP_OK)
-        FATAL_ERROR("Failed to init NTP, ret %d", ret);
-
-    ESP_LOGI(TAG, "NTP initialization done");
 
     ret = cpu_temp_sensor_init();
     if (ret != ESP_OK)
@@ -284,12 +305,23 @@ void app_main(void)
     if (hdc1080_sensor == NULL)
         FATAL_ERROR("Failed to init HDC1080 sensor");
 
-    ESP_LOGI(TAG, "Sensors I2C bus initialization done");
+    ESP_LOGI(TAG, "HDC1080 device initialization done");
 
     ret = gui_start();
     if (ret != ESP_OK) {
         FATAL_ERROR("Failed to start gui, ret %d!", ret);
     }
+
+    ESP_LOGI(TAG, "GUI started");
+
+    /* Give WiFi a chance */
+    sleep(1);
+
+    ret = ntp_init();
+    if (ret != ESP_OK)
+        FATAL_ERROR("Failed to init NTP, ret %d", ret);
+
+    ESP_LOGI(TAG, "NTP initialization done");
 
     /* No MQTT in AP mode or when broker IP is not configured */
     if (ap_mode || nvs_get_str(nvs, NVS_MQTT_BROKER_IP, NULL, &len) != ESP_OK) {

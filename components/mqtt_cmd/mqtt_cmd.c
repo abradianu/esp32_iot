@@ -719,6 +719,11 @@ esp_err_t mqtt_cmd_send_sensors_info(const struct mqtt_cmd_sensors_data_s *senso
         return ESP_FAIL;
     }
 
+    if (mqtt_cmd.mqtt_state == MQTT_STATE_DISCONNECTED) {
+        ESP_LOGE(TAG, "MQTT not connected!");
+        return ESP_FAIL;
+    }
+
     root = cJSON_CreateObject();
     if (root == NULL) {
         ESP_LOGE(TAG, "Could not create JSON object!");
