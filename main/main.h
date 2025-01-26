@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-char *esp32_iot_fw_version_get(void);
+char *esp32_iot_app_version_get(void);
 void esp32_iot_sensors_get_data(const struct mqtt_cmd_sensors_data_s **sensors_data);
 
 #ifdef __cplusplus

@@ -227,7 +227,11 @@ static void gui_update_stats(void)
     p += len;
     buf_len -= len;
 
-    len = snprintf(p, buf_len, "FW version: %s\n", esp32_iot_fw_version_get());
+    len = snprintf(p, buf_len, "IDF ver: %s\n", esp_get_idf_version());
+    p += len;
+    buf_len -= len;
+
+    len = snprintf(p, buf_len, "APP ver: %s\n", esp32_iot_app_version_get());
     p += len;
     buf_len -= len;
 

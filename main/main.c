@@ -59,7 +59,7 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define FW_VERSION              "1.04"
+#define ESP32_IOT_VERSION       "1.05"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
@@ -150,7 +150,7 @@ static void main_task(void *arg)
                 esp32_iot_sensors_data.temp = temp;
                 esp32_iot_sensors_data.humidity = humidity;
 
-                ESP_LOGI(TAG, "Temp %f, Humidity %f", temp, humidity);
+                ESP_LOGI(TAG, "Temp %.1f, Humidity %.1f", temp, humidity);
             }
 
             ret = gui_update_sensors(temp, humidity, &weather_data);
@@ -179,7 +179,7 @@ static void main_task(void *arg)
                 sensors_last_send_ticks = ticks;
             }
 
-#if 0
+#if 1
             /* Print some debug stats */
             char *stats_buf = malloc(1024);
             if (stats_buf == NULL) {
@@ -218,9 +218,9 @@ void esp32_iot_sensors_get_data(const struct mqtt_cmd_sensors_data_s **sensors_d
     *sensors_data = &esp32_iot_sensors_data;
 }
 
-char *esp32_iot_fw_version_get(void)
+char *esp32_iot_app_version_get(void)
 {
-    return FW_VERSION;
+    return ESP32_IOT_VERSION;
 }
 
 void app_main(void)

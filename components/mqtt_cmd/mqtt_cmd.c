@@ -672,7 +672,7 @@ esp_err_t mqtt_cmd_send_sys_info(void)
         !cJSON_AddStringToObject(root, CMD_JSON_CLIENT_ID, mqtt_cmd.mqtt_client_id) ||
         !cJSON_AddStringToObject(root, CMD_JSON_CHIP_MAC, nvs_get_base_mac())   ||
         !cJSON_AddNumberToObject(root, CMD_JSON_TIME, time(NULL))               ||
-        !cJSON_AddStringToObject(root, CMD_JSON_FW_VER, esp32_iot_fw_version_get())       ||
+        !cJSON_AddStringToObject(root, CMD_JSON_FW_VER, esp32_iot_app_version_get())       ||
         !cJSON_AddNumberToObject(root, CMD_JSON_HEAP, esp_get_free_heap_size()) ||
         !cJSON_AddNumberToObject(root, CMD_JSON_UPTIME, uptime)) {
         ESP_LOGE(TAG, "Could not add sys info to JSON!");
