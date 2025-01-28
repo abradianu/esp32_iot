@@ -39,8 +39,13 @@
 
 #define DISPLAY_QSPI_HOST               (SPI2_HOST)
 
-/* Limit the SPI transfer size as DMA memory needs to be in the internal RAM */
-#define DISPLAY_QSPI_NAX_TRANSFER_SZ    4096
+/* 
+ * Limit the amount of memory used for SPI transfers, only the internal RAM
+ * memory can be used for DMA. See DMA_DESCRIPTOR_BUFFER_MAX_SIZE_4B_ALIGNED
+ * and spicommon_dma_desc_alloc().
+ */
+#define DISPLAY_QSPI_NAX_TRANSFER_SZ    (4 * 4092)
+#define DISPLAY_QSPI_QUEUE_DEPTH        2
 
 /* Pinout */
 #define DISPLAY_PIN_NUM_CS              (GPIO_NUM_45)
@@ -196,7 +201,7 @@ static esp_err_t display_new_panel(display_dev_t *dev)
                                         DISPLAY_PIN_NUM_DATA2,
                                         DISPLAY_PIN_NUM_DATA3,
                                         DISPLAY_QSPI_NAX_TRANSFER_SZ);
-    const esp_lcd_panel_io_spi_config_t io_config =
+    esp_lcd_panel_io_spi_config_t io_config =
         AXS15231B_PANEL_IO_QSPI_CONFIG(DISPLAY_PIN_NUM_CS, NULL, NULL);
     const axs15231b_vendor_config_t vendor_config = {
         .init_cmds = lcd_init_cmds,
@@ -212,7 +217,10 @@ static esp_err_t display_new_panel(display_dev_t *dev)
         .vendor_config = (void *) &vendor_config,
     };
 
-    ESP_LOGI(TAG, "Initialize SPI bus");
+    io_config.trans_queue_depth = DISPLAY_QSPI_QUEUE_DEPTH;
+
+    ESP_LOGI(TAG, "Initialize SPI bus, trans. queue depth %d, max trans. size %d",
+           io_config.trans_queue_depth, DISPLAY_QSPI_NAX_TRANSFER_SZ);
     ret = spi_bus_initialize(DISPLAY_QSPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize SPI bus, ret %d", ret);
