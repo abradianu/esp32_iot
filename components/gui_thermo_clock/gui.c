@@ -83,6 +83,51 @@ LV_IMAGE_DECLARE(icon_temperature_in);
 LV_IMAGE_DECLARE(icon_temperature_out);
 LV_IMAGE_DECLARE(icon_humidity_in);
 
+static const char *gui_esp_reset_reason(void)
+{
+    esp_reset_reason_t reason = esp_reset_reason();
+    const char *reset_str;
+
+    switch (reason) {
+        case ESP_RST_POWERON:
+            reset_str = "power-on";
+            break;
+        case ESP_RST_EXT:
+            reset_str = "external";
+            break;
+        case ESP_RST_SW:
+            reset_str = "software";
+            break;
+        case ESP_RST_PANIC:
+            reset_str = "panic";
+            break;
+        case ESP_RST_INT_WDT:
+            reset_str = "IWDT";
+            break;
+        case ESP_RST_TASK_WDT:
+            reset_str = "TWDT";
+            break;
+        case ESP_RST_WDT:
+            reset_str = "WDT";
+            break;
+        case ESP_RST_DEEPSLEEP:
+            reset_str = "deep sleep";
+            break;
+        case ESP_RST_BROWNOUT:
+            reset_str = "low power";
+            break;
+        case ESP_RST_SDIO:
+            reset_str = "SDIO";
+            break;
+        case ESP_RST_UNKNOWN:
+        default:
+            reset_str  = "unknown";
+            break;
+    }
+
+    return reset_str;
+}
+
 static void gui_dialog_error(const char *name, const char *text)
 {
     lv_obj_t *mbox1 = lv_msgbox_create(NULL);
@@ -235,6 +280,10 @@ static void gui_update_stats(void)
     p += len;
     buf_len -= len;
 
+    len = snprintf(p, buf_len, "Reset reason: %s\n", gui_esp_reset_reason());
+    p += len;
+    buf_len -= len;
+
     /* Uptime in seconds */
     uptime = esp_timer_get_time() / 1000000;
     days = uptime / (3600 * 24);
@@ -270,26 +319,28 @@ static void gui_update_stats(void)
     p += len;
     buf_len -= len;
 
-    len = snprintf(p, buf_len, "Wifi info\n");
-    p += len;
-    buf_len -= len;
-
     if (wifi_is_ap()) {
+        len = snprintf(p, buf_len, "Wifi AP info\n");
+        p += len;
+        buf_len -= len;
+
         esp_wifi_get_config(WIFI_IF_AP, wifi_cfg);
         esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_AP_DEF"), &ip_info);
 
         len = snprintf(p, buf_len,
-            GUI_STATS_INFO_OFFSET"Mode: AP\n"
             GUI_STATS_INFO_OFFSET"SSID: %s\n"
             GUI_STATS_INFO_OFFSET"IP: "IPSTR,
                 (char *)wifi_cfg->ap.ssid, IP2STR(&ip_info.ip));
     } else {
+        len = snprintf(p, buf_len, "Wifi station info\n");
+        p += len;
+        buf_len -= len;
+
         esp_wifi_get_config(WIFI_IF_STA, wifi_cfg);
         esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ip_info);
         esp_wifi_sta_get_ap_info(&ap_info);
 
         len = snprintf(p, buf_len,
-            GUI_STATS_INFO_OFFSET"Mode: Station\n"
             GUI_STATS_INFO_OFFSET"SSID: %s\n"
             GUI_STATS_INFO_OFFSET"IP: "IPSTR"\n"
             GUI_STATS_INFO_OFFSET"State: %s Connected\n"
