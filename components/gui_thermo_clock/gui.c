@@ -12,6 +12,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_timer.h"
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
 #include "esp_ota_ops.h"
@@ -55,7 +56,14 @@
 #define GUI_STATS_PERIOD_MS               5000
 #define GUI_TIMER_PERIOD_MS               500
 
+enum gui_tabview_tabs_e {
+    GUI_TABVIEW_TAB_SENSORS,
+    GUI_TABVIEW_TAB_STATS,
+    GUI_TABVIEW_TAB_SETTINGS,
+};
+
 struct gui_s {
+    lv_obj_t *tabview;
     lv_obj_t *time_label;
     lv_obj_t *temp_in_label;
     lv_obj_t *humidity_in_label;
@@ -447,9 +455,8 @@ static void gui_ta_event_cb(lv_event_t *e)
     }
 }
 
-static void gui_tab_settings(lv_obj_t *parent)
+static void gui_update_settings(void)
 {
-    int32_t y_pos = GUI_SETTINGS_Y_START_OFFSET;
     char wifi_ssid[WIFI_SSID_LEN_MAX] = {0};
     char wifi_pass[WIFI_PASS_LEN_MAX] = {0};
     char mqtt_broker[24] = {0};
@@ -461,9 +468,17 @@ static void gui_tab_settings(lv_obj_t *parent)
     nvs_get_str(nvs_get_handle(), NVS_WIFI_PASS, wifi_pass, &pass_len);
     nvs_get_str(nvs_get_handle(), NVS_MQTT_BROKER_IP, mqtt_broker, &mqtt_broker_len);
 
+    lv_textarea_set_text(gui.ssid_ta, wifi_ssid);
+    lv_textarea_set_text(gui.pwd_ta, wifi_pass);
+    lv_textarea_set_text(gui.mqtt_broker_ta, mqtt_broker);
+}
+
+static void gui_tab_settings(lv_obj_t *parent)
+{
+    int32_t y_pos = GUI_SETTINGS_Y_START_OFFSET;
+
     /* First row, create the SSID text area and the SSID label  */
     gui.ssid_ta = lv_textarea_create(parent);
-    lv_textarea_set_text(gui.ssid_ta, wifi_ssid);
     lv_textarea_set_one_line(gui.ssid_ta, true);
     lv_textarea_set_password_mode(gui.ssid_ta, false);
     lv_obj_add_event_cb(gui.ssid_ta, gui_ta_event_cb, LV_EVENT_ALL, NULL);
@@ -484,7 +499,6 @@ static void gui_tab_settings(lv_obj_t *parent)
 
     /* Second row, create the password text area and the password label */
     gui.pwd_ta = lv_textarea_create(parent);
-    lv_textarea_set_text(gui.pwd_ta, wifi_pass);
     lv_textarea_set_one_line(gui.pwd_ta, true);
     lv_textarea_set_password_mode(gui.pwd_ta, true);
     lv_obj_add_event_cb(gui.pwd_ta, gui_ta_event_cb, LV_EVENT_ALL, NULL);
@@ -505,7 +519,6 @@ static void gui_tab_settings(lv_obj_t *parent)
 
     /* Third row, create the MQTT broker IP text area and label */
     gui.mqtt_broker_ta = lv_textarea_create(parent);
-    lv_textarea_set_text(gui.mqtt_broker_ta, mqtt_broker);
     lv_textarea_set_one_line(gui.mqtt_broker_ta, true);
     lv_textarea_set_password_mode(gui.mqtt_broker_ta, false);
     lv_obj_add_event_cb(gui.mqtt_broker_ta, gui_ta_event_cb, LV_EVENT_ALL, NULL);
@@ -531,27 +544,38 @@ static void gui_tab_settings(lv_obj_t *parent)
 
 static void gui_timer_cb(lv_timer_t *timer)
 {
+    time_t now;
     char time_buf[10];
     struct tm timeinfo;
-    time_t now;
     static uint32_t cnt = 0;
 
     /* GUI_TIMER_PERIOD_MS */
 
     cnt++;
-    time(&now);
-    localtime_r(&now, &timeinfo);
-
-    if (cnt & 1)
-        strftime(time_buf, sizeof(time_buf), "%H:%M", &timeinfo);
-    else
-        strftime(time_buf, sizeof(time_buf), "%H %M", &timeinfo);
 
     lvgl_port_lock(0);
 
-    lv_label_set_text(gui.time_label, time_buf);
-    if (cnt % (GUI_STATS_PERIOD_MS / GUI_TIMER_PERIOD_MS) == 0)
-        gui_update_stats();
+    switch (lv_tabview_get_tab_act(gui.tabview))
+    {
+        case GUI_TABVIEW_TAB_SENSORS:
+            time(&now);
+            localtime_r(&now, &timeinfo);
+
+            if (cnt & 1)
+                strftime(time_buf, sizeof(time_buf), "%H:%M", &timeinfo);
+            else
+                strftime(time_buf, sizeof(time_buf), "%H %M", &timeinfo);
+            lv_label_set_text(gui.time_label, time_buf);
+
+            break;
+
+        case GUI_TABVIEW_TAB_STATS:
+            gui_update_stats();
+            break;
+
+        default:
+            break;
+    };
 
     lvgl_port_unlock();
 }
@@ -569,7 +593,6 @@ esp_err_t gui_update_sensors(float temp_in, float humidity_in, struct weather_da
 
 esp_err_t gui_start(void)
 {
-    lv_obj_t *tabview;
     lv_obj_t *tab1, *tab2, *tab3;
     lv_timer_t *clock_timer;
 
@@ -585,20 +608,21 @@ esp_err_t gui_start(void)
 
     lv_obj_clean(lv_screen_active());
 
-    tabview = lv_tabview_create(lv_screen_active());
-    if (tabview == NULL) {
+    gui.tabview = lv_tabview_create(lv_screen_active());
+    if (gui.tabview == NULL) {
         ESP_LOGE(TAG, "Failed to create LVGL tabview");
         goto err_timer_del;
     }
 
     /* Change the background color */
-    lv_obj_set_style_bg_color(tabview, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(gui.tabview, lv_color_black(), LV_PART_MAIN);
 
-    tab1 = lv_tabview_add_tab(tabview, "Sensors");
-    tab2 = lv_tabview_add_tab(tabview, "Stats");
-    tab3 = lv_tabview_add_tab(tabview, "Settings");
+    /* Order needs to be in sync with gui_tabview_tabs_e enumeration */
+    tab1 = lv_tabview_add_tab(gui.tabview, "Sensors");
+    tab2 = lv_tabview_add_tab(gui.tabview, "Stats");
+    tab3 = lv_tabview_add_tab(gui.tabview, "Settings");
     if (tab1 == NULL || tab2 == NULL || tab3 == NULL)
-    if (tabview == NULL) {
+    if (gui.tabview == NULL) {
         ESP_LOGE(TAG, "Failed to create LVGL tabs");
         goto err_timer_del;
     }
@@ -606,6 +630,9 @@ esp_err_t gui_start(void)
     gui_tab_sensors(tab1);
     gui_tab_stats(tab2);
     gui_tab_settings(tab3);
+
+    /* Update settings tab, the others will be updated on timer callback */
+    gui_update_settings();
 
     lvgl_port_unlock();
 
