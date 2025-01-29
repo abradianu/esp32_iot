@@ -13,18 +13,20 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
 #include "nvs_utils.h"
 #include "http_server.h"
 #include "wifi.h"
 #include "display.h"
 #include "gui.h"
 #include "cpu_temp_sensor.h"
-#include "driver/gpio.h"
-#include "driver/i2c.h"
 #include "hdc1080.h"
 #include "mqtt_cmd.h"
 #include "weather.h"
 #include "esp_task_wdt.h"
+
+#include "sdkconfig.h"
 
 /* Main task settings */
 #define MAIN_TASK_PRIORITY                10
@@ -59,7 +61,7 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define ESP32_IOT_VERSION       "1.05"
+#define ESP32_IOT_VERSION       "1.06"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
@@ -179,9 +181,9 @@ static void main_task(void *arg)
                 sensors_last_send_ticks = ticks;
             }
 
-#if 1
-            /* Print some debug stats */
-            char *stats_buf = malloc(1024);
+#ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+            /* Print FreeRTOS tasks stats */
+            char *stats_buf = malloc(2048);
             if (stats_buf == NULL) {
                 ESP_LOGE(TAG, "Failed to allocate memory for debug stats");
             } else {
