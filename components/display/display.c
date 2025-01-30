@@ -39,13 +39,13 @@
 
 #define DISPLAY_QSPI_HOST               (SPI2_HOST)
 
-/* 
+/*
  * Limit the amount of memory used for SPI transfers, only the internal RAM
  * memory can be used for DMA. See DMA_DESCRIPTOR_BUFFER_MAX_SIZE_4B_ALIGNED
  * and spicommon_dma_desc_alloc().
  */
-#define DISPLAY_QSPI_NAX_TRANSFER_SZ    (4 * 4092)
-#define DISPLAY_QSPI_QUEUE_DEPTH        2
+#define DISPLAY_QSPI_NAX_TRANSFER_SZ    (2 * 4092)
+#define DISPLAY_QSPI_QUEUE_DEPTH        4
 
 /* Pinout */
 #define DISPLAY_PIN_NUM_CS              (GPIO_NUM_45)
