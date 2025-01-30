@@ -80,6 +80,30 @@ static esp_err_t weather_http_message_parse(struct weather_user_data_s *weather_
     cJSON *json_obj;
     cJSON *forecast_obj, *forecastday_obj;
     cJSON *day_entry_obj, *day_obj, *condition_obj;
+    char *hour_start, *hour_end;
+    const char *hour_start_marker = "\"hour\":[{";
+    const char *hour_end_marker = "}]";
+
+    /* Add NULL terminator */
+    weather_user_data->buf[weather_user_data->data_len] = 0;
+
+    /*
+     * Remove the content of the "hour" section to decrease the amount
+     * of RAM used for parsing the weather json
+     */
+    hour_start = strstr(weather_user_data->buf, hour_start_marker);
+    if (hour_start != NULL) {
+        hour_start += strlen(hour_start_marker);
+        hour_end = strstr(hour_start, hour_end_marker);
+        if (!hour_end) {
+            ESP_LOGI(TAG, "Hour end marker not found");
+        } else {
+            /* remove hourly data, +1 to include the null terminator */
+            memmove(hour_start, hour_end, strlen(hour_end) + 1);
+        }
+    } else {
+        ESP_LOGI(TAG, "Hour start marker not found");
+    }
 
     root = cJSON_Parse(weather_user_data->buf);
     if (root == NULL) {
