@@ -42,9 +42,9 @@
 #define SENSORS_SEND_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(60 * 1000)
 #define WEATHER_READ_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(5 * 60 * 1000)
 #define WDT_FEED_INTERVAL_TICKS           pdMS_TO_TICKS(CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000 / 2)
-/* Retry interval in case of send error and number of retries */
-#define SENSORS_SEND_DATA_RETRY_TICKS     pdMS_TO_TICKS(10 * 1000)
-#define SENSORS_SEND_DATA_RETRIES         20
+
+/* Number of consecutive send errors before rebooting */
+#define SENSORS_SEND_DATA_ERRORS          10
 
 /*
  * std offset dst [offset],start[/time],end[/time]
@@ -115,7 +115,7 @@ static esp_err_t i2c_sensors_bus_init(i2c_port_t bus)
 static void main_task(void *arg)
 {
     esp_err_t ret;
-    uint32_t send_retries = 0;
+    uint32_t send_errors = 0;
     float temp, humidity;
     struct weather_data_s weather_data;
     TickType_t weather_last_read_ticks = portMAX_DELAY/2;
@@ -164,21 +164,19 @@ static void main_task(void *arg)
         /* Check whether to send sensors data to the MQTT broker */
         ticks = xTaskGetTickCount();
         if (ticks - sensors_last_send_ticks >= SENSORS_SEND_DATA_INTERVAL_TICKS) {
+            sensors_last_send_ticks = ticks;
+
             ret = mqtt_cmd_send_sensors_info(&esp32_iot_sensors_data);
             if (ret != ESP_OK) {
                 /* sensors info not sent */
                 ESP_LOGE(TAG, "Failed to send sensor info, ret %d", ret);
 
-                sensors_last_send_ticks += SENSORS_SEND_DATA_RETRY_TICKS;
-                send_retries ++;
-
-                /* Reboot if we tried too many times */
-                if (send_retries > SENSORS_SEND_DATA_RETRIES) {
+                /* Reboot if too many consecutive send errors */
+                if (++send_errors > SENSORS_SEND_DATA_ERRORS) {
                     FATAL_ERROR("Too many send errors!");
                 }
             } else {
-                send_retries = 0;
-                sensors_last_send_ticks = ticks;
+                send_errors = 0;
             }
 
 #ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
@@ -210,7 +208,7 @@ static void main_task(void *arg)
 
         vTaskDelay(delay_ticks_next);
 
-        /* Feed the watchdog to prevent reset */
+        /* Feed the task watchdog to prevent reset */
         esp_task_wdt_reset();
     }
 }
