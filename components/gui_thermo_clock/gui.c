@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 #include "esp_err.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -155,13 +156,19 @@ static void gui_update_sensors_labels(float temp_in, float humidity_in, struct w
     buf[buf_len] = 0;
 
     /* dseg7 font space width takes 1/4 of a digit width */
-    snprintf(buf, buf_len, "%s%4.1f", temp_in >= 0 ? "    " : "", temp_in);
+    snprintf(buf, buf_len, "%s%s%.1f",
+        temp_in >= 0 ? "    " : "",        /* No sign */
+        fabsf(temp_in) < 10 ? "    " : "", /* Only one digit */
+        temp_in);
     lv_label_set_text(gui.temp_in_label, buf);
 
-    snprintf(buf, buf_len, "    %04.1f", humidity_in);
+    snprintf(buf, buf_len, "    %s%.1f", humidity_in < 10 ? "    " : "", humidity_in);
     lv_label_set_text(gui.humidity_in_label, buf);
 
-    snprintf(buf, buf_len, "%s%04.1f", weather_data->temp >= 0 ? "    " : "", weather_data->temp);
+    snprintf(buf, buf_len, "%s%s%.1f",
+        weather_data->temp >= 0 ? "    " : "",        /* No sign */
+        fabsf(weather_data->temp) < 10 ? "    " : "", /* Only one digit */
+        weather_data->temp);
     lv_label_set_text(gui.temp_out_label, buf);
 
     if (strlen(weather_data->description))
