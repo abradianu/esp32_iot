@@ -41,7 +41,7 @@
 #define SENSORS_READ_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(5 * 1000)
 #define SENSORS_SEND_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(60 * 1000)
 #define WEATHER_READ_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(5 * 60 * 1000)
-#define WDT_FEED_INTERVAL_TICKS           pdMS_TO_TICKS(CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000 / 2)
+#define WDT_FEED_INTERVAL_TICKS           SENSORS_READ_DATA_INTERVAL_TICKS
 
 /* Number of consecutive send errors before rebooting */
 #define SENSORS_SEND_DATA_ERRORS          10
@@ -92,9 +92,9 @@ static esp_err_t i2c_sensors_bus_init(i2c_port_t bus)
     const i2c_config_t i2c_conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = SENSORS_I2C_SDA_PIN_NUM,
-        .sda_pullup_en = GPIO_PULLUP_DISABLE,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
         .scl_io_num = SENSORS_I2C_SCL_PIN_NUM,
-        .scl_pullup_en = GPIO_PULLUP_DISABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
         .master.clk_speed = SENSORS_I2C_BUS_CLK_SPEED
     };
 
