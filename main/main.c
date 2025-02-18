@@ -61,11 +61,11 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define ESP32_IOT_VERSION       "1.07"
+#define ESP32_IOT_VERSION       "1.08"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
-    ESP_LOGE(TAG, fmt, ## args);                       \
+    ESP_LOGE(TAG, fmt, ## args);                      \
     ESP_LOGE(TAG, "Rebooting in 5 seconds");          \
     vTaskDelay(pdMS_TO_TICKS(5000));                  \
     esp_restart();                                    \
