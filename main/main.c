@@ -41,6 +41,10 @@
 #define SENSORS_READ_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(5 * 1000)
 #define SENSORS_SEND_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(60 * 1000)
 #define WEATHER_READ_DATA_INTERVAL_TICKS  pdMS_TO_TICKS(5 * 60 * 1000)
+
+/* Exponential moving average smoothing factor */
+#define EMA_SMOOTHING_FACTOR              0.3
+
 #define WDT_FEED_INTERVAL_TICKS           SENSORS_READ_DATA_INTERVAL_TICKS
 
 /* Number of consecutive send errors before rebooting */
@@ -61,7 +65,7 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define ESP32_IOT_VERSION       "1.08"
+#define ESP32_IOT_VERSION       "1.09"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
@@ -149,8 +153,10 @@ static void main_task(void *arg)
             if (ret != ESP_OK) {
                 FATAL_ERROR("Failed to read HDC1080 sensor, ret %d", ret);
             } else {
-                esp32_iot_sensors_data.temp = temp;
-                esp32_iot_sensors_data.humidity = humidity;
+                esp32_iot_sensors_data.temp = EMA_SMOOTHING_FACTOR * temp +
+                    (1 - EMA_SMOOTHING_FACTOR) * esp32_iot_sensors_data.temp;
+                esp32_iot_sensors_data.humidity = EMA_SMOOTHING_FACTOR * humidity +
+                    (1 - EMA_SMOOTHING_FACTOR) * esp32_iot_sensors_data.humidity;
 
                 ESP_LOGI(TAG, "Temp %.1f, Humidity %.1f", temp, humidity);
             }
