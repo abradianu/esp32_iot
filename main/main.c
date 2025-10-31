@@ -21,7 +21,7 @@
 #include "display.h"
 #include "gui.h"
 #include "cpu_temp_sensor.h"
-#include "hdc1080.h"
+#include "sensors.h"
 #include "mqtt_cmd.h"
 #include "weather.h"
 #include "esp_task_wdt.h"
@@ -76,8 +76,6 @@ do {                                                  \
 } while (0)
 
 static const char *TAG = "esp32_iot";
-
-static hdc1080_sensor_t *hdc1080_sensor;
 
 /* Last read sensors data */
 static struct mqtt_cmd_sensors_data_s esp32_iot_sensors_data;
@@ -149,9 +147,9 @@ static void main_task(void *arg)
         if (ticks - sensors_last_read_ticks >= SENSORS_READ_DATA_INTERVAL_TICKS) {
             sensors_last_read_ticks = ticks;
 
-            ret = hdc1080_read(hdc1080_sensor, &temp, &humidity);
+            ret = sensors_read_temp_humidity(&temp, &humidity);
             if (ret != ESP_OK) {
-                FATAL_ERROR("Failed to read HDC1080 sensor, ret %d", ret);
+                FATAL_ERROR("Failed to read temperature sensor, ret %d", ret);
             } else {
                 esp32_iot_sensors_data.temp = EMA_SMOOTHING_FACTOR * temp +
                     (1 - EMA_SMOOTHING_FACTOR) * esp32_iot_sensors_data.temp;
@@ -307,11 +305,11 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Sensors I2C bus initialization done");
     
-    hdc1080_sensor = hdc1080_init(SENSORS_I2C_BUS_NUM);
-    if (hdc1080_sensor == NULL)
-        FATAL_ERROR("Failed to init HDC1080 sensor");
+    ret = sensors_init(SENSORS_I2C_BUS_NUM);
+    if (ret != ESP_OK)
+        FATAL_ERROR("Failed to init sensors");
 
-    ESP_LOGI(TAG, "HDC1080 device initialization done");
+    ESP_LOGI(TAG, "Sensors initialization done");
 
     ret = gui_start();
     if (ret != ESP_OK) {
