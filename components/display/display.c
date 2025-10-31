@@ -24,6 +24,7 @@
 #include "esp_lcd_axs15231b.h"
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
+#include "nvs_utils.h"
 
 #include "sdkconfig.h"
 #include "display.h"
@@ -443,6 +444,7 @@ esp_err_t display_brightness_set(uint8_t brightness_percent)
 esp_err_t display_init(void)
 {
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    uint8_t brightness;
     esp_err_t ret;
 
     ESP_LOGI(TAG, "Initializing display...");
@@ -481,7 +483,10 @@ esp_err_t display_init(void)
         goto err;
     }
 
-    ret = display_brightness_set(DISPLAY_BRIGHTNESS_DEFAULT);
+    if (nvs_get_u8(nvs_get_handle(), NVS_DISPLAY_BRIGHTNESS, &brightness) != ESP_OK)
+        brightness = DISPLAY_BRIGHTNESS_DEFAULT;
+
+    ret = display_brightness_set(brightness);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set display brightness, ret %d", ret);
         goto err;

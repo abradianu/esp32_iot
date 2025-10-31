@@ -24,8 +24,6 @@ extern "C" {
 #define NVS_WIFI_SSID            "WiFiSSID"
 #define NVS_WIFI_PASS            "WiFiPass"
 
-#define NVS_CCS811_BASELINE      "baseline"
-
 nvs_handle nvs_get_handle(void);
 const char *nvs_get_base_mac(void);
 esp_err_t nvs_init(void);
