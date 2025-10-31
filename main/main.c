@@ -65,7 +65,7 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define ESP32_IOT_VERSION       "1.09"
+#define ESP32_IOT_VERSION       "1.10"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
