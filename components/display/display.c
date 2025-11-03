@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
- * SPDX-FileCopyrightText: 2024 Adrian Bradianu (github.com/abradianu)
+ * SPDX-FileCopyrightText: 2024-2025 Adrian Bradianu (github.com/abradianu)
  *
  * SPDX-License-Identifier: CC0-1.0
  */
@@ -9,7 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/spi_master.h"
 #include "driver/ledc.h"
 #include "esp_err.h"
@@ -105,6 +105,7 @@ static const axs15231b_lcd_init_cmd_t lcd_init_cmds[] = {
 #endif
 
 typedef struct {
+    i2c_master_bus_handle_t i2c_bus;
     lv_disp_t *disp;
     lv_indev_t *disp_indev;
     esp_lcd_panel_handle_t panel_handle;
@@ -123,29 +124,24 @@ static const char *TAG = "display";
 static esp_err_t display_i2c_init(display_dev_t *dev)
 {
     esp_err_t ret;
+    i2c_master_bus_config_t bus_cfg = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .i2c_port = DISPLAY_I2C_NUM,
+        .sda_io_num = DISPLAY_PIN_NUM_TOUCH_SDA,
+        .scl_io_num = DISPLAY_PIN_NUM_TOUCH_SCL,
+        .flags.enable_internal_pullup = false,
+    };
 
     /* I2C was initialized before */
     if (dev->i2c_initialized) {
         return ESP_OK;
     }
 
-    const i2c_config_t i2c_conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = DISPLAY_PIN_NUM_TOUCH_SDA,
-        .sda_pullup_en = GPIO_PULLUP_DISABLE,
-        .scl_io_num = DISPLAY_PIN_NUM_TOUCH_SCL,
-        .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = DISPLAY_I2C_CLK_SPEED_HZ
-    };
-    ret = i2c_param_config(DISPLAY_I2C_NUM, &i2c_conf);
+    ret = i2c_new_master_bus(&bus_cfg, &dev->i2c_bus);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to config I2C params, ret %d", ret);
-        return ret;
-    }
-
-    ret = i2c_driver_install(DISPLAY_I2C_NUM, i2c_conf.mode, 0, 0, 0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install I2C driver, ret %d", ret);
+        ESP_LOGE(TAG, "Failed to initialize display I2C bus: %s",
+            esp_err_to_name(ret));
         return ret;
     }
 
@@ -351,7 +347,9 @@ static esp_err_t display_touch_new(display_dev_t *dev)
             .mirror_y = 0,
         },
     };
-    const esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_AXS15231B_CONFIG();
+    esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_AXS15231B_CONFIG();
+    tp_io_config.scl_speed_hz = DISPLAY_I2C_CLK_SPEED_HZ;
+
 
     /* Initialize I2C */
     ret = display_i2c_init(dev);
@@ -360,7 +358,7 @@ static esp_err_t display_touch_new(display_dev_t *dev)
         return ret;
     }
 
-    ret = esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)DISPLAY_I2C_NUM,
+    ret = esp_lcd_new_panel_io_i2c(dev->i2c_bus,
             &tp_io_config, &dev->tp_io_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create new lcd panel, ret %d", ret);
@@ -494,9 +492,6 @@ esp_err_t display_init(void)
     return ESP_OK;
 
 err:
-    if (display_dev->i2c_initialized)
-        i2c_driver_delete(DISPLAY_I2C_NUM);
-
     if (display_dev->panel_handle)
         esp_lcd_panel_del(display_dev->panel_handle);
 
@@ -511,6 +506,9 @@ err:
         esp_lcd_touch_del(display_dev->tp_handle);
 
     spi_bus_free(DISPLAY_QSPI_HOST);
+
+    if (display_dev->i2c_initialized)
+        i2c_del_master_bus(display_dev->i2c_bus);
 
     free(display_dev);
     display_dev = NULL;

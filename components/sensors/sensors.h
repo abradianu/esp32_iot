@@ -13,8 +13,8 @@
 extern "C" {
 #endif
 
-esp_err_t sensors_init(i2c_port_t i2c_bus);
-esp_err_t sensors_read_temp_humidity(float *temp, float *humidity);
+esp_err_t sensors_init(i2c_master_bus_handle_t i2c_bus_handle);
+esp_err_t sensors_get_temp_humidity(float *temp, float *humidity);
 
 #ifdef __cplusplus
 }

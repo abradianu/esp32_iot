@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024 Adrian Bradianu (github.com/abradianu)
+ * SPDX-FileCopyrightText: 2024-2025 Adrian Bradianu (github.com/abradianu)
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,12 +7,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "driver/i2c.h"
-#include "esp_log.h"
 
+#include "freertos/FreeRTOS.h"
+#include "esp_log.h"
 #include "hdc1080.h"
 
 #define HDC1080_I2C_ADDRESS           0x40
+#define HDC1080_I2C_CLOCK_FREQ        100000
 
 /* HDC1080 register addresses */
 #define HDC1080_REG_TEMPERATURE       0x00
@@ -34,37 +35,61 @@
 
 /*
  * Chapter 7.5 Electrical Characteristics
- * Worst case for conversion time is 6.35 + 6.50 ms
+ * Typical case for conversion time is 6.35 (14 bit temp) + 6.50 ms (14 bit humidity)
  */
 #define HDC1080_CONVERSION_TIME_MS    20
 
 /* Timeout for I2C transactions*/
-#define HDC1080_I2C_TICKS_TO_WAIT     pdMS_TO_TICKS(500)
+#define HDC1080_I2C_MS_TO_WAIT        500
 
 static const char *TAG = "hdc1080";
 
-hdc1080_sensor_t *hdc1080_init(i2c_port_t bus)
+hdc1080_sensor_t *hdc1080_init(i2c_master_bus_handle_t i2c_master_bus)
 {
     esp_err_t ret;
     uint8_t data[3];
-    hdc1080_sensor_t* dev;
+    hdc1080_sensor_t *dev;
+    i2c_master_dev_handle_t i2c_dev;
+    const i2c_device_config_t i2c_dev_conf = {
+        .dev_addr_length    = I2C_ADDR_BIT_LEN_7,
+        .device_address     = HDC1080_I2C_ADDRESS,
+        .scl_speed_hz       = HDC1080_I2C_CLOCK_FREQ,
+    };
 
-    data[0] = HDC1080_REG_MANUF_ID;
-    ret = i2c_master_write_read_device(bus, HDC1080_I2C_ADDRESS, data, 1,
-        &data[1], 2, HDC1080_I2C_TICKS_TO_WAIT);
-    if (ret != ESP_OK ||
-        ((data[1] << 8) | data[2]) != HDC1080_MANUF_ID) {
-        ESP_LOGE(TAG, "Wrong manufacturer ID 0x%x, ret %d!", (data[1] << 8) | data[2], ret);
+    ret = i2c_master_probe(i2c_master_bus,
+        HDC1080_I2C_ADDRESS,
+        HDC1080_I2C_MS_TO_WAIT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to probe I2C master, ret %d!", ret);
         return NULL;
     }
 
+    ret = i2c_master_bus_add_device(i2c_master_bus, &i2c_dev_conf, &i2c_dev);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add I2C device, ret %d!", ret);
+        return NULL;
+    }
+
+    data[0] = HDC1080_REG_MANUF_ID;
+    ret = i2c_master_transmit_receive(i2c_dev,
+        &data[0], 1,
+        &data[1], 2,
+        HDC1080_I2C_MS_TO_WAIT);
+    if (ret != ESP_OK ||
+        ((data[1] << 8) | data[2]) != HDC1080_MANUF_ID) {
+        ESP_LOGE(TAG, "Wrong manufacturer ID 0x%x, ret %d!", (data[1] << 8) | data[2], ret);
+        goto i2c_dev_remove;
+    }
+
     data[0] = HDC1080_REG_DEVICE_ID;
-    ret = i2c_master_write_read_device(bus, HDC1080_I2C_ADDRESS, data, 1,
-        &data[1], 2, HDC1080_I2C_TICKS_TO_WAIT);
+    ret = i2c_master_transmit_receive(i2c_dev,
+        &data[0], 1,
+        &data[1], 2,
+        HDC1080_I2C_MS_TO_WAIT);
     if (ret != ESP_OK ||
         ((data[1] << 8) | data[2]) != HDC1080_DEVICE_ID) {
         ESP_LOGE(TAG, "Wrong device ID 0x%x, ret %d!", (data[1] << 8) | data[2], ret);
-        return NULL;
+        goto i2c_dev_remove;
     }
 
     data[0] = HDC1080_REG_CONFIG;
@@ -72,28 +97,34 @@ hdc1080_sensor_t *hdc1080_init(i2c_port_t bus)
               HDC1080_REG_CONFIG_HRES_11BIT |
               HDC1080_REG_CONFIG_MODE_BOTH;
     data[2] = 0;
-    ret = i2c_master_write_to_device(bus, HDC1080_I2C_ADDRESS,
-        data, 3, HDC1080_I2C_TICKS_TO_WAIT);
+    ret = i2c_master_transmit(i2c_dev,
+        data, 3,
+        HDC1080_I2C_MS_TO_WAIT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to send configuration");
-        return NULL;
+        goto i2c_dev_remove;
     }
 
     if ((dev = malloc (sizeof(hdc1080_sensor_t))) == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory");
-        return NULL;
+        goto i2c_dev_remove;
     }
 
     /* init sensor data structure */
-    dev->bus = bus;
+    dev->i2c_dev = i2c_dev;
 
-    ESP_LOGI(TAG, "HDC1080 init done, I2C bus %d, addr 0x%x", bus, HDC1080_I2C_ADDRESS);
+    ESP_LOGI(TAG, "HDC1080 init done, I2C addr 0x%x", HDC1080_I2C_ADDRESS);
     
     return dev;
+
+i2c_dev_remove:
+    i2c_master_bus_rm_device(i2c_dev);
+
+    return NULL;
 }
 
 /* Read temperature and humidity */
-esp_err_t hdc1080_read(hdc1080_sensor_t *sensor, float *temp, float *humidity)
+esp_err_t hdc1080_get_measurement(hdc1080_sensor_t *sensor, float *temp, float *humidity)
 {
     esp_err_t ret;
     uint8_t data[4];
@@ -107,8 +138,8 @@ esp_err_t hdc1080_read(hdc1080_sensor_t *sensor, float *temp, float *humidity)
      * the address pointer set to 0x00
      */
     data[0] = HDC1080_REG_TEMPERATURE;
-    ret = i2c_master_write_to_device(sensor->bus, HDC1080_I2C_ADDRESS,
-        data, 1, HDC1080_I2C_TICKS_TO_WAIT);
+    ret = i2c_master_transmit(sensor->i2c_dev,
+        data, 1, HDC1080_I2C_MS_TO_WAIT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to trigger the measurements, ret %d!", ret);
         return ret;
@@ -118,11 +149,11 @@ esp_err_t hdc1080_read(hdc1080_sensor_t *sensor, float *temp, float *humidity)
      * Wait for the measurements to complete, make sure we do not wait
      * less than HDC1080_CONVERSION_TIME interval
      */
-    vTaskDelay(pdMS_TO_TICKS(HDC1080_CONVERSION_TIME_MS));
+    vTaskDelay(pdMS_TO_TICKS(HDC1080_CONVERSION_TIME_MS) + 1);
 
     /* Read both temperature and humidity in a single read transaction */
-    ret = i2c_master_read_from_device(sensor->bus, HDC1080_I2C_ADDRESS,
-        data, 4, HDC1080_I2C_TICKS_TO_WAIT);
+    ret = i2c_master_receive(sensor->i2c_dev,
+        data, 4, HDC1080_I2C_MS_TO_WAIT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read the measurements, ret %d!", ret);
         return ESP_FAIL;

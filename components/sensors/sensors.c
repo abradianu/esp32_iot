@@ -9,32 +9,33 @@
 #include <stdlib.h>
 
 #include "esp_log.h"
-#include "driver/i2c.h"
 #include "hdc1080.h"
 
 /* Only HDC1080 for now */
  
 static hdc1080_sensor_t *hdc1080_sensor;
 
-esp_err_t sensors_init(i2c_port_t i2c_bus)
+esp_err_t sensors_init(i2c_master_bus_handle_t i2c_master_bus)
 {
-    /* At least one sensors must be present */
-    hdc1080_sensor = hdc1080_init(i2c_bus);
+    hdc1080_sensor = hdc1080_init(i2c_master_bus);
     if (hdc1080_sensor != NULL)
         return ESP_OK;
 
-    /* HDC1080 not detected, try next sensor */
+    /* No sensor detected */
 
     return ESP_FAIL;
 }
 
-/* Read temperature and humidity */
-esp_err_t sensors_read_temp_humidity(float *temp, float *humidity)
+/* Get temperature and humidity */
+esp_err_t sensors_get_temp_humidity(float *temperature, float *humidity)
 {
-    int ret = ESP_FAIL;
+    int ret;
 
     if (hdc1080_sensor)
-        ret = hdc1080_read(hdc1080_sensor, temp, humidity);
+        ret = hdc1080_get_measurement(hdc1080_sensor, temperature, humidity);
+    else {
+        ret = ESP_FAIL;
+    }
 
     return ret;
 }

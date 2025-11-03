@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2024 Adrian Bradianu (github.com/abradianu)
+ * SPDX-FileCopyrightText: 2024-2025 Adrian Bradianu (github.com/abradianu)
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,7 +14,7 @@
 #include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "nvs_utils.h"
 #include "http_server.h"
 #include "wifi.h"
@@ -33,7 +33,6 @@
 #define MAIN_TASK_STACK_SIZE              4096
 
 #define SENSORS_I2C_BUS_NUM               I2C_NUM_1
-#define SENSORS_I2C_BUS_CLK_SPEED         100000
 #define SENSORS_I2C_SDA_PIN_NUM           GPIO_NUM_17
 #define SENSORS_I2C_SCL_PIN_NUM           GPIO_NUM_18
 
@@ -65,7 +64,7 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define ESP32_IOT_VERSION       "1.10"
+#define ESP32_IOT_VERSION       "2.00"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
@@ -87,31 +86,30 @@ static esp_err_t ntp_init(void)
     return esp_netif_sntp_init(&config);
 }
 
-static esp_err_t i2c_sensors_bus_init(i2c_port_t bus)
+esp_err_t i2c_sensors_bus_init(i2c_port_t bus, i2c_master_bus_handle_t *bus_handle)
 {
     esp_err_t ret;
-
-    const i2c_config_t i2c_conf = {
-        .mode = I2C_MODE_MASTER,
+    i2c_master_bus_config_t bus_cfg = {
+        .i2c_port = bus,
         .sda_io_num = SENSORS_I2C_SDA_PIN_NUM,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
         .scl_io_num = SENSORS_I2C_SCL_PIN_NUM,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = SENSORS_I2C_BUS_CLK_SPEED
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true
     };
 
-    ret = i2c_param_config(bus, &i2c_conf);
+    if (!bus_handle) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ret = i2c_new_master_bus(&bus_cfg, bus_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to config sensors I2C!");
+        ESP_LOGE(TAG, "Failed to initialize sensors I2C bus: %s",
+            esp_err_to_name(ret));
         return ret;
     }
 
-    ret = i2c_driver_install(bus, i2c_conf.mode, 0, 0, 0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install sensors I2C driver!");
-    }
-
-    return ret;
+    return ESP_OK;
 }
 
 static void main_task(void *arg)
@@ -147,7 +145,7 @@ static void main_task(void *arg)
         if (ticks - sensors_last_read_ticks >= SENSORS_READ_DATA_INTERVAL_TICKS) {
             sensors_last_read_ticks = ticks;
 
-            ret = sensors_read_temp_humidity(&temp, &humidity);
+            ret = sensors_get_temp_humidity(&temp, &humidity);
             if (ret != ESP_OK) {
                 FATAL_ERROR("Failed to read temperature sensor, ret %d", ret);
             } else {
@@ -235,6 +233,7 @@ void app_main(void)
     char wifi_pass[WIFI_PASS_LEN_MAX];
     const char *base_mac;
     nvs_handle nvs;
+    i2c_master_bus_handle_t sensors_i2c_bus_handle = NULL;
     size_t len;
 
     ESP_LOGI(TAG, "Starting...");
@@ -299,13 +298,13 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Display initialization done");
 
-    ret = i2c_sensors_bus_init(SENSORS_I2C_BUS_NUM);
+    ret = i2c_sensors_bus_init(SENSORS_I2C_BUS_NUM, &sensors_i2c_bus_handle);
     if (ret != ESP_OK)
         FATAL_ERROR("Failed to init sensors i2c bus, ret %d", ret);
 
     ESP_LOGI(TAG, "Sensors I2C bus initialization done");
     
-    ret = sensors_init(SENSORS_I2C_BUS_NUM);
+    ret = sensors_init(sensors_i2c_bus_handle);
     if (ret != ESP_OK)
         FATAL_ERROR("Failed to init sensors");
 
