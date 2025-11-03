@@ -64,7 +64,7 @@
  */
 #define TIMEZONE                "EET-2EEST-3,M3.5.0,M10.5.0"
 
-#define ESP32_IOT_VERSION       "2.00"
+#define ESP32_IOT_VERSION       "2.01"
 
 #define FATAL_ERROR(fmt, args...)                     \
 do {                                                  \
@@ -145,7 +145,7 @@ static void main_task(void *arg)
         if (ticks - sensors_last_read_ticks >= SENSORS_READ_DATA_INTERVAL_TICKS) {
             sensors_last_read_ticks = ticks;
 
-            ret = sensors_get_temp_humidity(&temp, &humidity);
+            ret = sensors_get_temperature_humidity(&temp, &humidity);
             if (ret != ESP_OK) {
                 FATAL_ERROR("Failed to read temperature sensor, ret %d", ret);
             } else {

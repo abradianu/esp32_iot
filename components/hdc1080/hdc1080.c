@@ -113,7 +113,7 @@ hdc1080_sensor_t *hdc1080_init(i2c_master_bus_handle_t i2c_master_bus)
     /* init sensor data structure */
     dev->i2c_dev = i2c_dev;
 
-    ESP_LOGI(TAG, "HDC1080 init done, I2C addr 0x%x", HDC1080_I2C_ADDRESS);
+    ESP_LOGI(TAG, "Init done, I2C addr 0x%x", HDC1080_I2C_ADDRESS);
     
     return dev;
 
@@ -124,14 +124,13 @@ i2c_dev_remove:
 }
 
 /* Read temperature and humidity */
-esp_err_t hdc1080_get_measurement(hdc1080_sensor_t *sensor, float *temp, float *humidity)
+esp_err_t hdc1080_get_measurement(hdc1080_sensor_t *sensor, float *temperature, float *humidity)
 {
     esp_err_t ret;
     uint8_t data[4];
 
-    /* At least one is not NULL */
-    if (!temp && !humidity)
-        return ESP_FAIL;
+    if (!temperature || !humidity)
+        return -ESP_ERR_INVALID_ARG;
 
     /* 
      * Trigger the measurements by executing a pointer write transaction with
@@ -156,12 +155,12 @@ esp_err_t hdc1080_get_measurement(hdc1080_sensor_t *sensor, float *temp, float *
         data, 4, HDC1080_I2C_MS_TO_WAIT);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read the measurements, ret %d!", ret);
-        return ESP_FAIL;
+        return ret;
     }
 
     /* Chapters 8.6.1 & 8.6.2 from HDC1080 datasheet */
-    if (temp)
-        *temp = (((float)(165 * ((data[0] << 8) | data[1]))) / (1 << 16)) - 40;
+    if (temperature)
+        *temperature = (((float)(165 * ((data[0] << 8) | data[1]))) / (1 << 16)) - 40;
     if (humidity)
         *humidity = (float)(100 * ((data[2] << 8) | data[3])) / (1 << 16);
 
