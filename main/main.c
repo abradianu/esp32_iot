@@ -127,19 +127,13 @@ static void main_task(void *arg)
     if (esp_task_wdt_add(NULL) != ESP_OK)
         FATAL_ERROR("Failed to add watchdog!");
 
+    /* Start values for the temperature and humidity exponential moving average */
+    ret = sensors_get_temperature_humidity(&temp, &humidity);
+    if (ret != ESP_OK) {
+        FATAL_ERROR("Failed to read temperature sensor, ret %d", ret);
+    }
+
     while (true) {
-        /* Check whether to read weather info */
-        ticks = xTaskGetTickCount();
-        if (ticks - weather_last_read_ticks >= WEATHER_READ_DATA_INTERVAL_TICKS &&
-            wifi_is_connected()) {
-            weather_last_read_ticks = ticks;
-
-            ret = weather_get_info(&weather_data);
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to get weather data, ret %d", ret);
-            }
-        }
-
         /* Check whether to read sensors info */
         ticks = xTaskGetTickCount();
         if (ticks - sensors_last_read_ticks >= SENSORS_READ_DATA_INTERVAL_TICKS) {
@@ -160,6 +154,18 @@ static void main_task(void *arg)
             ret = gui_update_sensors(temp, humidity, &weather_data);
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "Failed to update gui, ret %d", ret);
+            }
+        }
+
+        /* Check whether to read weather info */
+        ticks = xTaskGetTickCount();
+        if (ticks - weather_last_read_ticks >= WEATHER_READ_DATA_INTERVAL_TICKS &&
+            wifi_is_connected()) {
+            weather_last_read_ticks = ticks;
+
+            ret = weather_get_info(&weather_data);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to get weather data, ret %d", ret);
             }
         }
 
