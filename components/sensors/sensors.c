@@ -46,3 +46,14 @@ esp_err_t sensors_get_temperature_humidity(float *temperature, float *humidity)
 
     return ret;
 }
+
+const char *sensors_get_type(void)
+{
+    if (hdc1080_sensor != NULL)
+        return "HDC1080";
+
+    if (sht4x_sensor != NULL)
+        return "SHT4x";
+
+    return "Unknown";
+}

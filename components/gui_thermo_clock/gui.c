@@ -22,6 +22,7 @@
 #include "wifi.h"
 #include "main.h"
 #include "gui.h"
+#include "sensors.h"
 
 /* 320 x 480 pixels display*/
 
@@ -323,14 +324,10 @@ static void gui_update_stats(void)
     p += len;
     buf_len -= len;
 
-    len = snprintf(p, buf_len, "Heap free stats\n");
-    p += len;
-    buf_len -= len;
-
     len = snprintf(p, buf_len,
-        GUI_STATS_INFO_OFFSET"Total: %luB\n"
-        GUI_STATS_INFO_OFFSET"Internal: %luB\n",
-        esp_get_free_heap_size(), esp_get_free_internal_heap_size());
+        "Heap free total: %lukB\n"
+        "Heap free internal: %lukB\n",
+        esp_get_free_heap_size() / 1024, esp_get_free_internal_heap_size() / 1024);
     p += len;
     buf_len -= len;
 
@@ -344,7 +341,7 @@ static void gui_update_stats(void)
 
         len = snprintf(p, buf_len,
             GUI_STATS_INFO_OFFSET"SSID: %s\n"
-            GUI_STATS_INFO_OFFSET"IP: "IPSTR,
+            GUI_STATS_INFO_OFFSET"IP: "IPSTR"\n",
                 (char *)wifi_cfg->ap.ssid, IP2STR(&ip_info.ip));
     } else {
         len = snprintf(p, buf_len, "Wifi station info\n");
@@ -359,17 +356,25 @@ static void gui_update_stats(void)
             GUI_STATS_INFO_OFFSET"SSID: %s\n"
             GUI_STATS_INFO_OFFSET"IP: "IPSTR"\n"
             GUI_STATS_INFO_OFFSET"State: %s Connected\n"
-            GUI_STATS_INFO_OFFSET"RSSI: %ddBm",
+            GUI_STATS_INFO_OFFSET"RSSI: %ddBm\n",
             (char *)wifi_cfg->sta.ssid,
             IP2STR(&ip_info.ip),
             wifi_is_connected() ? "" : "Not",
             ap_info.rssi);
     }
+    p += len;
+    buf_len -= len;
+
+    /* No new line termination for the last stat */
+    len = snprintf(p, buf_len, "Sensor type: %s", sensors_get_type());
     buf_len -= len;
 
     /* Make sure the string is NULL terminated */
-    if (!buf_len)
+    if (!buf_len) {
         buf[len - 1] = 0;
+
+        ESP_LOGE(TAG, "Not enough buffer space for all the stats!\n");
+    }
 
     lv_label_set_text(gui.stats_label, buf);
 

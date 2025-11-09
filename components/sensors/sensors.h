@@ -15,6 +15,7 @@ extern "C" {
 
 esp_err_t sensors_init(i2c_master_bus_handle_t i2c_bus_handle);
 esp_err_t sensors_get_temperature_humidity(float *temperature, float *humidity);
+const char *sensors_get_type(void);
 
 #ifdef __cplusplus
 }
