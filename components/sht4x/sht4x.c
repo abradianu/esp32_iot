@@ -111,7 +111,7 @@ esp_err_t sht4x_get_measurement(sht4x_sensor_t *sensor, float *temperature, floa
     uint8_t data[6];
 
     if (!temperature || !humidity)
-        return -ESP_ERR_INVALID_ARG;
+        return ESP_ERR_INVALID_ARG;
 
     /* Trigger the high precision measurement */
     data[0] = SHT4X_CMD_MEASURE_HIGH_PRECISION;

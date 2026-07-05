@@ -307,7 +307,7 @@ error:
  */
 static esp_err_t mqtt_cmd_send_result(int cmd, esp_err_t res)
 {
-    esp_err_t ret;
+    esp_err_t ret = ESP_OK;
     cJSON *root = NULL;
     char *string;
 
@@ -327,6 +327,11 @@ static esp_err_t mqtt_cmd_send_result(int cmd, esp_err_t res)
     }
 
     string = cJSON_Print(root);
+    if (string == NULL) {
+        ESP_LOGE(TAG, "Could not print JSON object!");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
 
     if (esp_mqtt_client_publish(mqtt_cmd.mqtt_client, mqtt_cmd.mqtt_data_topic,
             string, strlen(string), MQTT_PUB_QOS, 0) == -1) {
@@ -362,6 +367,11 @@ static esp_err_t mqtt_cmd_do_reboot(const cJSON *root)
         /* Save the AP mod in flash*/  
         if (nvs_set_u8(nvs, NVS_WIFI_AP_MODE, ap_mode->valueint) != ESP_OK) {
             ESP_LOGI(TAG, "Failed to write the AP mode!");
+            return ESP_FAIL;
+        }
+
+        if (nvs_commit(nvs) != ESP_OK) {
+            ESP_LOGI(TAG, "Failed to commit the AP mode!");
             return ESP_FAIL;
         }
     }
@@ -444,6 +454,11 @@ static esp_err_t mqtt_cmd_set_client_name(const cJSON *root)
        return ESP_FAIL;
     }
 
+    if (nvs_commit(nvs) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to commit the MQTT client name!");
+        return ESP_FAIL;
+    }
+
     return ESP_OK;
 }
 
@@ -468,6 +483,11 @@ static esp_err_t mqtt_cmd_set_broker_ip(const cJSON *root)
     /* Save in flash, will be taken into consideration at the next reboot */
     if (nvs_set_str(nvs, NVS_MQTT_BROKER_IP, broker_ip->valuestring) != ESP_OK) {
         ESP_LOGI(TAG, "Failed to write the MQTT server IP!");
+        return ESP_FAIL;
+    }
+
+    if (nvs_commit(nvs) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to commit the MQTT server IP!");
         return ESP_FAIL;
     }
 
@@ -502,6 +522,11 @@ static esp_err_t mqtt_cmd_set_display_brightness(const cJSON *root)
         return ESP_FAIL;
     }
 
+    if (nvs_commit(nvs) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to commit the brightness level!");
+        return ESP_FAIL;
+    }
+
     return ESP_OK;
 }
 
@@ -526,6 +551,11 @@ static esp_err_t mqtt_cmd_set_weather_api_id(const cJSON *root)
     /* Save in flash, will be taken into consideration at the next reboot */
     if (nvs_set_str(nvs, NVS_WEATHER_API_ID, api_ip->valuestring) != ESP_OK) {
         ESP_LOGI(TAG, "Failed to write the weather API ID!");
+        return ESP_FAIL;
+    }
+
+    if (nvs_commit(nvs) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to commit the weather API ID!");
         return ESP_FAIL;
     }
 
@@ -683,6 +713,11 @@ esp_err_t mqtt_cmd_send_sys_info(void)
     }
 
     string = cJSON_Print(root);
+    if (string == NULL) {
+        ESP_LOGE(TAG, "Could not print JSON object!");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
 
     if (esp_mqtt_client_publish(mqtt_cmd.mqtt_client, mqtt_cmd.mqtt_data_topic,
             string, strlen(string), MQTT_PUB_QOS, 0) == -1) {
@@ -746,6 +781,11 @@ esp_err_t mqtt_cmd_send_sensors_info(const struct mqtt_cmd_sensors_data_s *senso
     }
 
     string = cJSON_Print(root);
+    if (string == NULL) {
+        ESP_LOGE(TAG, "Could not print JSON object!");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
 
     if (esp_mqtt_client_publish(mqtt_cmd.mqtt_client, mqtt_cmd.mqtt_data_topic,
             string, strlen(string), MQTT_PUB_QOS, 0) == -1) {
@@ -768,7 +808,7 @@ esp_err_t mqtt_cmd_init(void)
         return ESP_FAIL;
 
     mqtt_cmd.cmd_recv_queue = xQueueCreate(CMD_PARSE_QUEUE_LEN,
-        sizeof( struct cmd_data_s));
+        sizeof(struct cmd_data_s *));
     if (mqtt_cmd.cmd_recv_queue == NULL) {
         ESP_LOGE(TAG, "Failed to create MQTT cmd queue!");
         return ESP_FAIL;

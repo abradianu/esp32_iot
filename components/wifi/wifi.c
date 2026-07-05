@@ -81,8 +81,8 @@ esp_err_t wifi_init_softap(const char *ssid, const char *pass)
     }
 
     if (esp_netif_create_default_wifi_ap() == NULL) {
-        ESP_LOGE(TAG, "Failed to create wifi ap, ret %d", ret);
-        return ret;
+        ESP_LOGE(TAG, "Failed to create wifi ap");
+        return ESP_FAIL;
     }
 
     ret = esp_wifi_init(&cfg);
@@ -164,8 +164,8 @@ esp_err_t wifi_init_sta(const char *ssid, const char *pass)
     }
 
     if (esp_netif_create_default_wifi_sta() == NULL) {
-        ESP_LOGE(TAG, "Failed to create wifi station, ret %d", ret);
-        return ret;
+        ESP_LOGE(TAG, "Failed to create wifi station");
+        return ESP_FAIL;
     }
 
     ret = esp_wifi_init(&cfg);

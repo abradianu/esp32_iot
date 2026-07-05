@@ -75,7 +75,7 @@ esp_err_t ota_start(const char *server_ip, int server_port, const char *filename
         goto err_http_client_cleanup;
     }
     file_len = esp_http_client_fetch_headers(client);
-    if (!file_len) {
+    if (file_len <= 0) {
         ESP_LOGI(TAG, "Failed to get image length");
         err = ESP_ERR_NOT_FOUND;
         goto err_http_client_cleanup;
@@ -114,7 +114,11 @@ esp_err_t ota_start(const char *server_ip, int server_port, const char *filename
             downloaded_len += data_read;
             if (progress_cb) {
                 /* Download progress in procents */
-                progress_cb(downloaded_len / (file_len / 100));
+                uint32_t file_len_div_100 = file_len / 100;
+                if (file_len_div_100 == 0) {
+                    file_len_div_100 = 1;
+                }
+                progress_cb(downloaded_len / file_len_div_100);
             }
         } else if (data_read == 0) {
            /*
@@ -134,6 +138,7 @@ esp_err_t ota_start(const char *server_ip, int server_port, const char *filename
     ESP_LOGI(TAG, "Total Write binary data length: %d", downloaded_len);
     if (esp_http_client_is_complete_data_received(client) != true) {
         ESP_LOGE(TAG, "Failed to receive complete file");
+        err = ESP_FAIL;
         goto err_ota_abort;
     }
 

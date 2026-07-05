@@ -112,12 +112,20 @@ esp_err_t i2c_sensors_bus_init(i2c_port_t bus, i2c_master_bus_handle_t *bus_hand
     return ESP_OK;
 }
 
+static void sensors_data_ema_apply(float temp, float humidity)
+{
+    esp32_iot_sensors_data.temp = EMA_SMOOTHING_FACTOR * temp +
+        (1 - EMA_SMOOTHING_FACTOR) * esp32_iot_sensors_data.temp;
+    esp32_iot_sensors_data.humidity = EMA_SMOOTHING_FACTOR * humidity +
+        (1 - EMA_SMOOTHING_FACTOR) * esp32_iot_sensors_data.humidity;
+}
+
 static void main_task(void *arg)
 {
     esp_err_t ret;
     uint32_t send_errors = 0;
     float temp, humidity;
-    struct weather_data_s weather_data;
+    struct weather_data_s weather_data = {0};
     TickType_t weather_last_read_ticks = portMAX_DELAY/2;
     TickType_t sensors_last_read_ticks = portMAX_DELAY/2;
     TickType_t sensors_last_send_ticks = portMAX_DELAY/2;
@@ -131,6 +139,9 @@ static void main_task(void *arg)
     ret = sensors_get_temperature_humidity(&temp, &humidity);
     if (ret != ESP_OK) {
         FATAL_ERROR("Failed to read temperature sensor, ret %d", ret);
+    } else {
+        esp32_iot_sensors_data.temp = temp;
+        esp32_iot_sensors_data.humidity = humidity;
     }
 
     while (true) {
@@ -143,11 +154,7 @@ static void main_task(void *arg)
             if (ret != ESP_OK) {
                 FATAL_ERROR("Failed to read temperature sensor, ret %d", ret);
             } else {
-                esp32_iot_sensors_data.temp = EMA_SMOOTHING_FACTOR * temp +
-                    (1 - EMA_SMOOTHING_FACTOR) * esp32_iot_sensors_data.temp;
-                esp32_iot_sensors_data.humidity = EMA_SMOOTHING_FACTOR * humidity +
-                    (1 - EMA_SMOOTHING_FACTOR) * esp32_iot_sensors_data.humidity;
-
+                sensors_data_ema_apply(temp, humidity);
                 ESP_LOGI(TAG, "Temp %.1f, Humidity %.1f", temp, humidity);
             }
 

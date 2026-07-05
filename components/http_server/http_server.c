@@ -164,7 +164,11 @@ void http_server_task(void *pvParameters)
                     nvs_set_u8(nvs, NVS_WIFI_AP_MODE, 0) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to save the new credentials!");
                 } else {
-                    ESP_LOGI(TAG, "Station mode set, ssid %s, password %s", ssid, pass);
+                    if (nvs_commit(nvs) != ESP_OK) {
+                        ESP_LOGE(TAG, "Failed to commit the new credentials!");
+                    } else {
+                        ESP_LOGI(TAG, "Station mode set, ssid %s, password %s", ssid, pass);
+                    }
                 }
                 break;
             }

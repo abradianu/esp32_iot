@@ -58,6 +58,7 @@
 #define DISPLAY_PIN_NUM_DC              (GPIO_NUM_8)
 #define DISPLAY_PIN_NUM_TE              (GPIO_NUM_38)
 #define DISPLAY_PIN_NUM_BL              (GPIO_NUM_1)
+#define DISPLAY_BL_LEDC_CHANNEL         (LEDC_CHANNEL_1)
 
 #define DISPLAY_PIN_NUM_TOUCH_SCL       (GPIO_NUM_8)
 #define DISPLAY_PIN_NUM_TOUCH_SDA       (GPIO_NUM_4)
@@ -158,7 +159,7 @@ static esp_err_t display_brightness_init(display_dev_t *dev)
     const ledc_channel_config_t LCD_backlight_channel = {
         .gpio_num = DISPLAY_PIN_NUM_BL,
         .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = DISPLAY_PIN_NUM_BL,
+        .channel = DISPLAY_BL_LEDC_CHANNEL,
         .intr_type = LEDC_INTR_DISABLE,
         .timer_sel = 1,
         .duty = 0,
@@ -423,15 +424,15 @@ esp_err_t display_brightness_set(uint8_t brightness_percent)
     // LEDC resolution set to 10bits, thus: 100% = 1023
     uint32_t duty_cycle = (1023 * (uint32_t)brightness_percent) / 100;
 
-    ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL, duty_cycle);
+    ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, DISPLAY_BL_LEDC_CHANNEL, duty_cycle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set ledc duty, ret %d", ret);
         return ret;
     }
 
-    ret = ledc_update_duty(LEDC_LOW_SPEED_MODE, DISPLAY_PIN_NUM_BL);
+    ret = ledc_update_duty(LEDC_LOW_SPEED_MODE, DISPLAY_BL_LEDC_CHANNEL);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to updatye ledc duty, ret %d", ret);
+        ESP_LOGE(TAG, "Failed to update ledc duty, ret %d", ret);
         return ret;
     }
 

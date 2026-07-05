@@ -412,6 +412,12 @@ static void gui_dialog_apply_event_cb(lv_event_t *e)
         return;
     }
 
+    if (nvs_commit(nvs_get_handle()) != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to commit the new settings!");
+        gui_dialog_error("Error", "Failed to commit the new settings!");
+        return;
+    }
+
     ESP_LOGI(TAG, "Settings applied. Rebooting...");
 
     esp_restart();

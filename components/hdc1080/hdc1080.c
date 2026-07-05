@@ -130,7 +130,7 @@ esp_err_t hdc1080_get_measurement(hdc1080_sensor_t *sensor, float *temperature, 
     uint8_t data[4];
 
     if (!temperature || !humidity)
-        return -ESP_ERR_INVALID_ARG;
+        return ESP_ERR_INVALID_ARG;
 
     /* 
      * Trigger the measurements by executing a pointer write transaction with
